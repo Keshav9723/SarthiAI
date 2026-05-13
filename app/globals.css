@@ -1,0 +1,220 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --sarthi-forest: #0D2B1D;
+  --sarthi-green: #16A34A;
+  --sarthi-saffron: #F97316;
+  --sarthi-cream: #FAFAF7;
+  --bg-base: #FAFAF7;
+  --text-base: #111827;
+}
+
+.dark {
+  --bg-base: #0a1a12;
+  --text-base: #E5E7EB;
+}
+
+html,
+body {
+  background-color: var(--bg-base);
+  color: var(--text-base);
+}
+
+/* Dark-mode surface overrides — kept here rather than touching every card
+   class so we don't have to rewrite the entire UI. */
+.dark body {
+  background-color: var(--bg-base);
+}
+.dark .bg-cream {
+  background-color: #0f211a !important;
+}
+.dark .bg-white {
+  background-color: #14281f !important;
+  color: #E5E7EB;
+}
+/* Tailwind compiles bg-white/95, bg-white/90 etc. as distinct classes
+   (different from .bg-white), so we need explicit overrides for the
+   translucent navbar, popovers, and overlay surfaces to recolour in dark mode. */
+.dark .bg-white\/95 {
+  background-color: rgba(20, 40, 31, 0.95) !important;
+}
+.dark .bg-white\/90 {
+  background-color: rgba(20, 40, 31, 0.9) !important;
+}
+.dark .text-gray-900 {
+  color: #F3F4F6 !important;
+}
+.dark .text-gray-800 {
+  color: #E5E7EB !important;
+}
+.dark .text-gray-700 {
+  color: #D1D5DB !important;
+}
+.dark .text-gray-600 {
+  color: #B7C2BC !important;
+}
+.dark .text-gray-500 {
+  color: #94A39B !important;
+}
+.dark .border-gray-100,
+.dark .border-gray-200 {
+  border-color: #1f3a2c !important;
+}
+.dark .bg-gray-50,
+.dark .bg-gray-100 {
+  background-color: #1a2f24 !important;
+}
+.dark .bg-green-50 {
+  background-color: rgba(22, 163, 74, 0.12) !important;
+}
+.dark .bg-saffron-50 {
+  background-color: rgba(249, 115, 22, 0.12) !important;
+}
+.dark .bg-rose-50 {
+  background-color: rgba(244, 63, 94, 0.12) !important;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Hide scrollbar on horizontal scroll rails (used by trending destinations, recently generated, etc) */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Sidebar / chat panel custom scrollbar — thin and discreet */
+.thin-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(17, 24, 39, 0.12);
+  border-radius: 4px;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(17, 24, 39, 0.24);
+}
+
+/* Focus ring that matches the brand */
+@layer utilities {
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2;
+  }
+}
+
+/* Default visible focus ring for ANY focusable element we didn't explicitly
+   style. Improves keyboard-navigation discoverability across the app. */
+@layer base {
+  /* Default loading state for next/image. While the remote image is being
+     fetched/decoded, the wrapper span shows a soft gray that the loaded image
+     then covers — no per-component changes needed. Components that pass
+     `placeholder="blur"` get a richer blur effect on top of this. */
+  span[data-nimg] {
+    background-color: #f3f4f6; /* gray-100 */
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--sarthi-green);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Skip-to-content link — hidden until keyboard-focused. Sits above
+     everything so it can't be obscured by sticky nav / modals. */
+  .skip-link {
+    position: fixed;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 100;
+    padding: 0.6rem 1rem;
+    background: var(--sarthi-green);
+    color: #ffffff;
+    font-weight: 600;
+    border-radius: 0.5rem;
+    transform: translateY(-200%);
+    transition: transform 160ms ease-out;
+  }
+  .skip-link:focus {
+    transform: translateY(0);
+    outline: 2px solid #ffffff;
+    outline-offset: 2px;
+  }
+}
+
+/* Respect "Reduce motion" OS-level preference. Keep tiny duration so state
+   changes are still perceptible, but disable long slides / spins. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Print stylesheet — used by Share & Export → Download PDF
+   The browser's print dialog can save the resulting page directly as PDF.
+   Adding `print:hidden` (Tailwind) on any element hides it during print.
+   --------------------------------------------------------------------------- */
+@media print {
+  /* Force background colors to render (Chrome opts in via this property). */
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #111827 !important;
+  }
+
+  /* Strip the gradient hero overlays so text stays crisp on print. */
+  .bg-forest-950,
+  [class*="from-forest-950"] {
+    background: #0d2b1d !important;
+  }
+
+  /* Drop sticky positioning so the sidebar flows with the document. */
+  [class*="sticky"] {
+    position: static !important;
+    top: auto !important;
+  }
+
+  /* Tighten margins on the actual paper. */
+  @page {
+    margin: 0.5in;
+    size: A4;
+  }
+
+  /* Prevent a day row from breaking across pages where possible. */
+  article {
+    break-inside: avoid;
+  }
+
+  /* Hide every fixed/floating widget by default — toaster, chat launcher, etc. */
+  .fixed {
+    display: none !important;
+  }
+
+  /* Anchor links underlined for readability when printed. */
+  a {
+    color: #1a3e2c !important;
+    text-decoration: underline;
+  }
+}

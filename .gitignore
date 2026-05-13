@@ -1,0 +1,88 @@
+# ---------- dependencies ----------
+node_modules/
+.pnp
+.pnp.js
+jspm_packages/
+
+# ---------- next.js ----------
+.next/
+out/
+build/
+dist/
+
+# ---------- env files (secrets) ----------
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+*.env
+
+# ---------- logs ----------
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+logs/
+*.log
+
+# ---------- testing / coverage ----------
+coverage/
+.nyc_output/
+*.lcov
+
+# ---------- typescript ----------
+*.tsbuildinfo
+next-env.d.ts
+
+# ---------- caches ----------
+.cache/
+.parcel-cache/
+.turbo/
+.swc/
+.eslintcache
+.stylelintcache
+
+# ---------- editor / IDE ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# ---------- OS ----------
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# ---------- Claude Code ----------
+.claude/
+.claude.json
+CLAUDE.local.md
+
+# ---------- python (in case of scripts/notebooks) ----------
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+
+# ---------- vercel / netlify ----------
+.vercel
+.netlify
+
+# ---------- misc ----------
+*.local
+*.pem
+.history/
+tmp/
+temp/
