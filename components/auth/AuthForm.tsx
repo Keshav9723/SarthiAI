@@ -1,8 +1,9 @@
 "use client";
 
 // components/auth/AuthForm.tsx
-// Mock login/signup. Writes a minimal { name, email } object to localStorage
-// under "sarthi_user" so the Navbar reflects the auth state immediately.
+// Real Supabase auth — email/password sign-up + sign-in + Google/Apple OAuth.
+// After a successful auth, supabase.auth.onAuthStateChange in useAuth fires
+// and every component using useAuth re-renders. We just need to redirect.
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -10,22 +11,25 @@ import Link from "next/link";
 import {
   CompassIcon,
   ArrowRightIcon,
+  MailIcon,
 } from "@/components/ui/Icons";
-import { useAuth } from "@/lib/useAuth";
+import { createClient } from "@/lib/supabase/client";
 import { toast } from "@/lib/toast";
 
 type Mode = "login" | "signup";
 
 export default function AuthForm() {
   const router = useRouter();
-  const { login } = useAuth();
   const [mode, setMode] = useState<Mode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  // Surfaces the "check your inbox" UI when sign-up succeeds but email
+  // confirmation is enabled on the Supabase project.
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (busy) return;
     if (!email || !password || (mode === "signup" && !name)) {
@@ -33,31 +37,108 @@ export default function AuthForm() {
       return;
     }
     setBusy(true);
-    // Simulate latency so the UI feels real.
-    window.setTimeout(() => {
-      login({
-        name: mode === "signup" ? name : email.split("@")[0] ?? "Traveller",
-        email,
-      });
-      toast.success(
-        mode === "signup"
-          ? "Account created. Welcome aboard!"
-          : "Welcome back!"
-      );
-      router.push("/");
-    }, 600);
+    const supabase = createClient();
+    try {
+      if (mode === "signup") {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { name: name.trim() },
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
+          },
+        });
+        if (error) throw error;
+        if (!data.session) {
+          // Email confirmation flow — session is null until they click the link
+          setPendingEmail(email);
+        } else {
+          toast.success("Account created. Welcome to Sarthi!");
+          router.push("/");
+          router.refresh();
+        }
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (error) throw error;
+        toast.success("Welcome back!");
+        router.push("/");
+        router.refresh();
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function handleOAuth(provider: "Google" | "Apple") {
+  async function handleOAuth(provider: "google" | "apple") {
+    if (busy) return;
     setBusy(true);
-    window.setTimeout(() => {
-      login({
-        name: "Keshav",
-        email: `keshav@${provider.toLowerCase()}.com`,
-      });
-      toast.success(`Signed in with ${provider}.`);
-      router.push("/");
-    }, 600);
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+    if (error) {
+      setBusy(false);
+      // Most common cause: the provider isn't enabled in the Supabase project
+      // yet. Surfacing the actual message helps debug.
+      toast.error(
+        error.message ??
+          `${provider} sign-in isn't configured yet — enable it in Supabase Auth settings.`
+      );
+    }
+    // On success: the browser is redirected to the provider, so no further
+    // work here. After the user returns, /auth/callback completes the flow.
+  }
+
+  // ---------- "Check your email" state ----------
+  if (pendingEmail) {
+    return (
+      <div className="w-full max-w-md mx-auto">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 group focus-ring rounded-lg -mx-2 px-2 py-1"
+        >
+          <span className="grid place-items-center w-9 h-9 rounded-full bg-forest-950 text-white group-hover:bg-green-600 transition-colors">
+            <CompassIcon size={20} strokeWidth={2} />
+          </span>
+          <span className="text-lg font-bold tracking-tight text-gray-900">
+            Sarthi
+          </span>
+        </Link>
+
+        <div className="mt-10 rounded-3xl bg-cream border border-gray-100 p-7 text-center">
+          <span className="inline-grid place-items-center w-14 h-14 rounded-full bg-saffron-50 text-saffron-600">
+            <MailIcon size={26} />
+          </span>
+          <h1 className="mt-5 text-2xl font-bold tracking-tight text-gray-900">
+            Check your inbox
+          </h1>
+          <p className="mt-2 text-gray-600 text-sm leading-relaxed">
+            We sent a confirmation link to{" "}
+            <strong className="text-gray-900">{pendingEmail}</strong>. Click it
+            to finish creating your Sarthi account.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setPendingEmail(null);
+              setMode("login");
+              setPassword("");
+            }}
+            className="mt-6 text-sm font-semibold text-green-700 hover:text-green-800 underline underline-offset-2"
+          >
+            ← Back to sign-in
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -87,7 +168,7 @@ export default function AuthForm() {
       <div className="mt-6 space-y-2">
         <button
           type="button"
-          onClick={() => handleOAuth("Google")}
+          onClick={() => handleOAuth("google")}
           disabled={busy}
           className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-2xl border-2 border-gray-200 bg-white text-sm font-semibold text-gray-800 hover:border-gray-300 transition-colors disabled:opacity-50"
         >
@@ -96,7 +177,7 @@ export default function AuthForm() {
         </button>
         <button
           type="button"
-          onClick={() => handleOAuth("Apple")}
+          onClick={() => handleOAuth("apple")}
           disabled={busy}
           className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-2xl border-2 border-gray-200 bg-white text-sm font-semibold text-gray-800 hover:border-gray-300 transition-colors disabled:opacity-50"
         >
@@ -138,7 +219,7 @@ export default function AuthForm() {
           type="password"
           value={password}
           onChange={setPassword}
-          placeholder="At least 8 characters"
+          placeholder="At least 6 characters"
           autoComplete={mode === "signup" ? "new-password" : "current-password"}
         />
 
@@ -147,8 +228,14 @@ export default function AuthForm() {
           disabled={busy}
           className="w-full mt-3 inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl bg-green-600 hover:bg-green-700 text-white font-semibold transition-colors disabled:opacity-60"
         >
-          {mode === "login" ? "Sign in" : "Create account"}
-          <ArrowRightIcon size={16} />
+          {busy
+            ? mode === "login"
+              ? "Signing in…"
+              : "Creating…"
+            : mode === "login"
+              ? "Sign in"
+              : "Create account"}
+          {!busy && <ArrowRightIcon size={16} />}
         </button>
       </form>
 

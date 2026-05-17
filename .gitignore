@@ -86,3 +86,6 @@ env/
 .history/
 tmp/
 temp/
+
+# ---------- scraper cache (raw HTML, regeneratable) ----------
+scripts/scrape/cache/

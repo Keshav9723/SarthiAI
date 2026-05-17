@@ -55,7 +55,7 @@ const DIETARY: { id: DietaryPreference; label: string; icon: string }[] = [
 
 export default function ProfileView() {
   const router = useRouter();
-  const { user, login, logout, hydrated } = useAuth();
+  const { user, updateProfile, signOut, hydrated } = useAuth();
   const { prefs, update: updatePrefs, clear: clearPrefs } = usePreferences();
 
   // Compute travel stats from the mock itinerary set. In a real backend
@@ -106,27 +106,53 @@ export default function ProfileView() {
     return <SignInPrompt />;
   }
 
-  function handleSaveProfile(patch: { name?: string; email?: string; avatar?: string }) {
+  async function handleSaveProfile(patch: {
+    name?: string;
+    email?: string;
+    avatar?: string;
+  }) {
     if (!user) return;
-    login({ ...user, ...patch });
-    toast.success("Profile updated.");
+    try {
+      await updateProfile(patch);
+      // If the email was changed, Supabase sends a confirmation link before
+      // committing the change — surface that so the user isn't confused.
+      if (patch.email && patch.email !== user.email) {
+        toast.success("Check your new email to confirm the change.");
+      } else {
+        toast.success("Profile updated.");
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Couldn't update profile."
+      );
+    }
   }
 
-  function handleSignOut() {
-    logout();
-    toast.success("Signed out. See you soon!");
-    router.push("/");
+  async function handleSignOut() {
+    try {
+      await signOut();
+      toast.success("Signed out. See you soon!");
+      router.push("/");
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't sign out.");
+    }
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     const ok = window.confirm(
-      "Delete your account? This will clear your saved trips and preferences on this device. (Mock — no backend yet.)"
+      "Delete your account? This clears your local preferences and signs you out. (Server-side account deletion ships with the next backend pass.)"
     );
     if (!ok) return;
     clearPrefs();
-    logout();
-    toast.success("Account deleted on this device.");
+    try {
+      await signOut();
+    } catch {
+      // ignore — local state is already cleared
+    }
+    toast.success("Signed out and local data cleared.");
     router.push("/");
+    router.refresh();
   }
 
   return (

@@ -1,67 +1,105 @@
 "use client";
 
 // lib/useAuth.ts
-// Reads the mock user from localStorage and re-renders if it changes. Used by
-// the Navbar (login button vs avatar) and any auth-gated page like /my-itineraries.
+// Supabase-backed auth hook. Replaces the localStorage mock with the real
+// session pulled from supabase.auth + a live subscription so all components
+// using this hook re-render on sign-in / sign-out / profile update.
 //
-// Login/logout fire a `sarthi:auth` event so consumers update without a refresh.
+// Returns the same { user, hydrated } shape as before, plus async
+// updateProfile() and signOut() helpers. AuthForm now calls Supabase methods
+// directly — auth state propagates here via the listener.
 
 import { useEffect, useState } from "react";
+import type { User as SupabaseUser } from "@supabase/supabase-js";
+import { createClient } from "./supabase/client";
 import type { User } from "./mockData";
 
-const STORAGE_KEY = "sarthi_user";
-const EVENT = "sarthi:auth";
+const LEGACY_KEY = "sarthi_user"; // pre-Supabase localStorage entry — cleaned up below
 
-function readUser(): User | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed: unknown = JSON.parse(raw);
-    if (
-      parsed &&
-      typeof parsed === "object" &&
-      typeof (parsed as User).name === "string" &&
-      typeof (parsed as User).email === "string"
-    ) {
-      return parsed as User;
-    }
-    // Stale or malformed entry — clean it up so we don't keep crashing.
-    window.localStorage.removeItem(STORAGE_KEY);
-    return null;
-  } catch {
-    window.localStorage.removeItem(STORAGE_KEY);
-    return null;
-  }
+/**
+ * Translates a Supabase auth user into the frontend's `User` shape so every
+ * other component sees the same fields whether we're mocked or real.
+ */
+function mapUser(u: SupabaseUser | null | undefined): User | null {
+  if (!u) return null;
+  const meta = (u.user_metadata ?? {}) as {
+    name?: string;
+    avatar_url?: string;
+  };
+  return {
+    name:
+      (meta.name && meta.name.trim()) ||
+      u.email?.split("@")[0] ||
+      "Traveller",
+    email: u.email ?? "",
+    avatar: meta.avatar_url,
+  };
 }
 
 export function useAuth() {
-  // Always start with null on first render to match SSR and avoid hydration mismatch.
   const [user, setUser] = useState<User | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    setUser(readUser());
-    setHydrated(true);
+    // Wipe the obsolete localStorage user — the Supabase session cookie is
+    // now the source of truth. Idempotent.
+    try {
+      window.localStorage.removeItem(LEGACY_KEY);
+    } catch {
+      // SSR / private browsing — ignore
+    }
 
-    const onChange = () => setUser(readUser());
-    window.addEventListener("storage", onChange);
-    window.addEventListener(EVENT, onChange);
-    return () => {
-      window.removeEventListener("storage", onChange);
-      window.removeEventListener(EVENT, onChange);
-    };
+    const supabase = createClient();
+
+    // Hydrate immediately from the current session.
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(mapUser(session?.user));
+      setHydrated(true);
+    });
+
+    // Live re-renders on sign-in, sign-out, token refresh, profile update.
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(mapUser(session?.user));
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  function login(next: User) {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    window.dispatchEvent(new Event(EVENT));
+  /**
+   * Update name / avatar (stored under `user_metadata`) or email.
+   * Throws on Supabase error so callers can show a toast.
+   */
+  async function updateProfile(patch: {
+    name?: string;
+    email?: string;
+    avatar?: string;
+  }) {
+    const supabase = createClient();
+
+    type Updates = Parameters<typeof supabase.auth.updateUser>[0];
+    const updates: Updates = {};
+
+    if (patch.email) updates.email = patch.email;
+
+    if (patch.name !== undefined || patch.avatar !== undefined) {
+      const data: Record<string, unknown> = {};
+      if (patch.name !== undefined) data.name = patch.name;
+      if (patch.avatar !== undefined) data.avatar_url = patch.avatar;
+      updates.data = data;
+    }
+
+    if (Object.keys(updates).length === 0) return;
+    const { error } = await supabase.auth.updateUser(updates);
+    if (error) throw error;
   }
 
-  function logout() {
-    window.localStorage.removeItem(STORAGE_KEY);
-    window.dispatchEvent(new Event(EVENT));
+  async function signOut() {
+    const supabase = createClient();
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
   }
 
-  return { user, login, logout, hydrated };
+  return { user, hydrated, updateProfile, signOut };
 }

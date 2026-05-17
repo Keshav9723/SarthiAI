@@ -41,7 +41,7 @@ function isActive(pathname: string, href: string) {
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, logout, hydrated } = useAuth();
+  const { user, signOut, hydrated } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
@@ -67,10 +67,15 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", onClick);
   }, [accountOpen]);
 
-  function handleLogout() {
-    logout();
-    toast.success("Signed out. See you soon!");
-    router.push("/");
+  async function handleLogout() {
+    try {
+      await signOut();
+      toast.success("Signed out. See you soon!");
+      router.push("/");
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't sign out.");
+    }
   }
 
   return (
