@@ -54,18 +54,20 @@ export async function getOrCreateDestination(
   const cached = idCache.get(config.slug);
   if (cached) return cached;
 
-  // Try existing row first.
+  // Try existing row first. Pull the fields we might want to backfill so
+  // updateDestinationMetadata knows which are currently null and safe to fill.
   const { data: existing, error: selErr } = await sb()
     .from("destinations")
-    .select("id")
+    .select("id, region, destination_type, wikipedia_title, wikivoyage_title")
     .eq("slug", config.slug)
     .maybeSingle();
   if (selErr) throw selErr;
 
   if (existing?.id) {
     idCache.set(config.slug, existing.id);
-    // If we have new Wikidata metadata, fold it in.
-    if (metadata) await updateDestinationMetadata(existing.id, config, metadata);
+    // Always call — even without Wikidata metadata, we may need to backfill
+    // config-derived fields (region, destination_type, …) on pre-seeded rows.
+    await updateDestinationMetadata(existing, config, metadata);
     return existing.id;
   }
 
@@ -100,21 +102,44 @@ export async function getOrCreateDestination(
   return inserted.id;
 }
 
+interface ExistingDestinationRow {
+  id: string;
+  region?: string | null;
+  destination_type?: string | null;
+  wikipedia_title?: string | null;
+  wikivoyage_title?: string | null;
+}
+
 export async function updateDestinationMetadata(
-  id: string,
+  existing: ExistingDestinationRow,
   config: DestinationConfig,
-  metadata: WikidataMetadata
+  metadata?: WikidataMetadata
 ): Promise<void> {
   const patch: Record<string, unknown> = {};
-  if (metadata.latitude  != null) patch.latitude  = metadata.latitude;
-  if (metadata.longitude != null) patch.longitude = metadata.longitude;
-  if (metadata.elevationM != null) patch.elevation_m = metadata.elevationM;
-  if (metadata.population != null) patch.population = metadata.population;
-  if (metadata.wikidataId)        patch.wikidata_id = metadata.wikidataId;
-  // Don't overwrite curated region/type values that already exist.
+
+  // Wikidata-sourced fields (when present).
+  if (metadata?.latitude  != null) patch.latitude    = metadata.latitude;
+  if (metadata?.longitude != null) patch.longitude   = metadata.longitude;
+  if (metadata?.elevationM != null) patch.elevation_m = metadata.elevationM;
+  if (metadata?.population != null) patch.population  = metadata.population;
+  if (metadata?.wikidataId)        patch.wikidata_id  = metadata.wikidataId;
+
+  // Config-sourced fields — only backfill if the DB currently has null, so
+  // we never clobber a curated value (e.g. the original 6 destinations'
+  // hand-set tags / taglines aren't touched here either way).
+  if (!existing.region          && config.region)          patch.region = config.region;
+  if (!existing.destination_type && config.destinationType) patch.destination_type = config.destinationType;
+  if (!existing.wikipedia_title && config.wikipediaTitle)  patch.wikipedia_title = config.wikipediaTitle;
+  if (!existing.wikivoyage_title && !config.skipWikivoyage && config.wikivoyageTitle) {
+    patch.wikivoyage_title = config.wikivoyageTitle;
+  }
+
   if (!Object.keys(patch).length) return;
 
-  const { error } = await sb().from("destinations").update(patch).eq("id", id);
+  const { error } = await sb()
+    .from("destinations")
+    .update(patch)
+    .eq("id", existing.id);
   if (error) throw error;
 }
 
@@ -127,6 +152,17 @@ export async function upsertChunks(
   chunks: PreparedChunk[]
 ): Promise<{ inserted: number }> {
   if (chunks.length === 0) return { inserted: 0 };
+
+  // Purge existing chunks for this destination/sources before inserting.
+  // This avoids stale rows when the position scheme changes between runs
+  // and dodges any latent duplicate-key issues from within-batch conflicts.
+  const sources = Array.from(new Set(chunks.map((c) => c.sourceName)));
+  const { error: delErr } = await sb()
+    .from("knowledge_chunks")
+    .delete()
+    .eq("destination_id", destinationId)
+    .in("source_name", sources);
+  if (delErr) throw delErr;
 
   const rows = chunks.map((c) => ({
     destination_id: destinationId,
@@ -146,9 +182,7 @@ export async function upsertChunks(
   let inserted = 0;
   for (let i = 0; i < rows.length; i += BATCH) {
     const slice = rows.slice(i, i + BATCH);
-    const { error } = await sb()
-      .from("knowledge_chunks")
-      .upsert(slice, { onConflict: "source_url,position" });
+    const { error } = await sb().from("knowledge_chunks").insert(slice);
     if (error) throw error;
     inserted += slice.length;
   }

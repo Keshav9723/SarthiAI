@@ -24,11 +24,20 @@ const CACHE_DIR = path.join(process.cwd(), "scripts", "scrape", "cache");
 // Per-host "last request" timestamp so we don't hammer a single domain.
 const lastRequestAt = new Map<string, number>();
 
+// Some hosts have stricter limits than POLITE_DELAY_MS. Open-Meteo's free
+// archive API in particular starts 429-ing past ~30 req/min. Nominatim's
+// published policy is strict: 1 request/sec, no bursts.
+const HOST_DELAYS: Record<string, number> = {
+  "archive-api.open-meteo.com": 2500,
+  "nominatim.openstreetmap.org": 1500,
+};
+
 async function waitForDomain(url: string): Promise<void> {
   const host = new URL(url).host;
+  const delay = HOST_DELAYS[host] ?? POLITE_DELAY_MS;
   const last = lastRequestAt.get(host) ?? 0;
   const elapsed = Date.now() - last;
-  const wait = POLITE_DELAY_MS - elapsed;
+  const wait = delay - elapsed;
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   lastRequestAt.set(host, Date.now());
 }
@@ -65,7 +74,10 @@ async function fetchRaw(url: string, opts: FetchOptions = {}): Promise<string> {
   }
 
   let lastErr: unknown = null;
-  for (let attempt = 1; attempt <= FETCH_MAX_RETRIES; attempt++) {
+  // 429-throttling needs a much longer cooldown than 5xx. Open-Meteo's
+  // hint is ~30 sec; double that for headroom.
+  const MAX_RETRIES = FETCH_MAX_RETRIES + 2;   // 5 total attempts for retryable errors
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     await waitForDomain(url);
     try {
       const res = await fetch(url, {
@@ -81,7 +93,15 @@ async function fetchRaw(url: string, opts: FetchOptions = {}): Promise<string> {
       if (res.status >= 400 && res.status < 500 && res.status !== 429) {
         throw new Error(`HTTP ${res.status} ${res.statusText} — ${url}`);
       }
-      if (res.status >= 500 || res.status === 429) {
+      if (res.status === 429) {
+        // Throttled — extra-long cooldown.
+        if (attempt < MAX_RETRIES) {
+          const wait = 30_000 + attempt * 15_000;   // 45s, 60s, 75s, …
+          await new Promise((r) => setTimeout(r, wait));
+        }
+        throw new Error(`HTTP 429 throttled — ${url}`);
+      }
+      if (res.status >= 500) {
         throw new Error(`HTTP ${res.status} (retryable) — ${url}`);
       }
 
@@ -90,7 +110,7 @@ async function fetchRaw(url: string, opts: FetchOptions = {}): Promise<string> {
       return body;
     } catch (err) {
       lastErr = err;
-      if (attempt < FETCH_MAX_RETRIES) {
+      if (attempt < MAX_RETRIES) {
         const wait = FETCH_RETRY_BASE_MS * 2 ** (attempt - 1);
         await new Promise((r) => setTimeout(r, wait));
       }

@@ -24,6 +24,26 @@ export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+// Headings whose body content is bibliographic, list-heavy, or otherwise
+// useless for travel RAG. Skipped entirely by the splitter. Match is on the
+// normalised heading text (lowercase, punctuation stripped).
+const SKIP_HEADINGS = new Set([
+  "references",
+  "external links",
+  "see also",
+  "bibliography",
+  "notes",
+  "further reading",
+  "citations",
+  "footnotes",
+  "sources",
+  "literature",
+  "gallery",
+  "in popular culture",
+  "twin towns",
+  "sister cities",
+]);
+
 interface SplitOptions {
   $: CheerioAPI;
   rootSelector: string;          // e.g. "#mw-content-text .mw-parser-output"
@@ -76,6 +96,7 @@ export function splitByHeadings(opts: SplitOptions): RawChunk[] {
     const heading = cleanHeading($h.text());
     if (!heading) continue;
     if (level === "h2") currentH2 = heading;
+    if (SKIP_HEADINGS.has(heading.toLowerCase().replace(/[^a-z\s]/g, "").trim())) continue;
 
     const body = collectTextUntilHeading($, root, h, level);
     if (estimateTokens(body) < CHUNK_MIN_TOKENS) continue;
@@ -144,9 +165,16 @@ function cleanHeading(s: string): string {
 
 // Splits a single chunk into ≤CHUNK_MAX_TOKENS windows with overlap. Uses a
 // crude char-based slicer — close enough for embeddings, no tokenizer needed.
+//
+// Position scheme: ALL chunks (split or not) use chunk.position * 1000 + idx.
+// This way non-split chunks land at positions {1000, 2000, …} and split
+// chunks at {N*1000, N*1000+1, …}. Slice indices stay safely below the next
+// thousand, so no collisions can occur between adjacent headings.
 function splitLongChunk(chunk: RawChunk): RawChunk[] {
   const tokens = estimateTokens(chunk.text);
-  if (tokens <= CHUNK_MAX_TOKENS) return [chunk];
+  if (tokens <= CHUNK_MAX_TOKENS) {
+    return [{ ...chunk, position: chunk.position * 1000 }];
+  }
 
   const targetChars = CHUNK_TARGET_TOKENS * 4;
   const overlapChars = CHUNK_OVERLAP_TOKENS * 4;
@@ -168,8 +196,6 @@ function splitLongChunk(chunk: RawChunk): RawChunk[] {
   return slices.map((text, idx) => ({
     ...chunk,
     text,
-    // Stretch position so each slice gets a unique (source_url, position) key.
-    // 1000-step gap leaves room for re-runs adding more chunks between.
     position: chunk.position * 1000 + idx,
   }));
 }

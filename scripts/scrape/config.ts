@@ -32,11 +32,12 @@ export const EMBED_DIMS = 1024;
 export const CLASSIFY_T2_MIN_SCORE = 0.55;   // top category must clear this
 export const CLASSIFY_T2_MIN_MARGIN = 0.05;  // ...and beat #2 by this margin
 
-// Chunker config.
+// Chunker config. CHUNK_MAX_TOKENS stays under mxbai-embed-large's 512-token
+// hard limit, with margin for chars/4 estimator error.
 export const CHUNK_MIN_TOKENS = 50;
-export const CHUNK_MAX_TOKENS = 700;
-export const CHUNK_TARGET_TOKENS = 450;
-export const CHUNK_OVERLAP_TOKENS = 100;
+export const CHUNK_MAX_TOKENS = 480;
+export const CHUNK_TARGET_TOKENS = 380;
+export const CHUNK_OVERLAP_TOKENS = 80;
 
 // ---------------------------------------------------------------------------
 // Destination list

@@ -9,13 +9,21 @@ import { CompassIcon } from "@/components/ui/Icons";
 
 interface Props {
   lines: string[];
+  /** Total duration in ms before onDone fires. Ignored when `indeterminate` is true. */
   durationMs?: number;
-  onDone: () => void;
+  /** When true, cycle the status lines indefinitely (does NOT auto-call onDone).
+   *  Use when waiting on a real API — let the parent decide when to call onDone. */
+  indeterminate?: boolean;
+  /** Override the heading. Defaults to "Generating your itinerary…". */
+  title?: string;
+  onDone?: () => void;
 }
 
 export default function GeneratingLoader({
   lines,
   durationMs = 2000,
+  indeterminate = false,
+  title,
   onDone,
 }: Props) {
   const [index, setIndex] = useState(0);
@@ -23,16 +31,25 @@ export default function GeneratingLoader({
   // Rotate through the status lines so the user sees progress.
   useEffect(() => {
     if (lines.length === 0) return;
-    const each = Math.max(400, Math.floor(durationMs / lines.length));
+    // In indeterminate mode, we have no idea how long the real API will take.
+    // Cycle every 4 sec so the user sees movement; clamp at the last line so
+    // we don't loop back to the start awkwardly.
+    const each = indeterminate
+      ? 4000
+      : Math.max(400, Math.floor(durationMs / lines.length));
     const id = window.setInterval(() => {
       setIndex((i) => Math.min(lines.length - 1, i + 1));
     }, each);
-    const timeout = window.setTimeout(onDone, durationMs);
+
+    let timeout: number | null = null;
+    if (!indeterminate && onDone) {
+      timeout = window.setTimeout(onDone, durationMs);
+    }
     return () => {
       window.clearInterval(id);
-      window.clearTimeout(timeout);
+      if (timeout != null) window.clearTimeout(timeout);
     };
-  }, [durationMs, lines.length, onDone]);
+  }, [durationMs, lines.length, indeterminate, onDone]);
 
   return (
     <div className="min-h-[calc(100dvh-4rem)] flex items-center justify-center bg-cream px-4">
@@ -46,7 +63,7 @@ export default function GeneratingLoader({
           />
         </span>
         <h2 className="mt-8 text-2xl md:text-3xl font-bold tracking-tight text-gray-900">
-          Generating your itinerary…
+          {title ?? "Generating your itinerary…"}
         </h2>
         <p className="mt-3 text-base text-gray-600 min-h-[1.75rem] transition-all">
           {lines[index] ?? lines[lines.length - 1]}

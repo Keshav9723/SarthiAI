@@ -9,6 +9,8 @@ import { useEffect, useMemo, useState } from "react";
 import WizardShell from "./WizardShell";
 import GeneratingLoader from "./GeneratingLoader";
 import GroupTypeCard from "@/components/cards/GroupTypeCard";
+import { useAuth } from "@/lib/useAuth";
+import { toast } from "@/lib/toast";
 import {
   MOCK_DEPARTURE_CITIES,
   MOCK_DESTINATIONS,
@@ -67,9 +69,11 @@ const INITIAL: FormState = {
 export default function GenerateWizard() {
   const router = useRouter();
   const search = useSearchParams();
+  const { user, hydrated: authHydrated } = useAuth();
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<FormState>(INITIAL);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const { draft, save, clear, hydrated } = useWizardDraft<FormState>(DRAFT_KEY);
   const [resumeDismissed, setResumeDismissed] = useState(false);
@@ -133,15 +137,63 @@ export default function GenerateWizard() {
     }
   }, [step, form]);
 
-  function next() {
+  async function next() {
     if (step < TOTAL_STEPS) {
       setStep((s) => s + 1);
       return;
     }
-    // Successful submit — the trip is about to be "saved" as an itinerary,
-    // so the draft is no longer needed.
-    clear();
+
+    // ---- Final step: submit to /api/generate ----
+    if (authHydrated && !user) {
+      // Not signed in — stash a return URL and bounce to /auth.
+      toast.error("Please sign in to generate your itinerary.");
+      router.push(`/auth?next=${encodeURIComponent("/generate")}`);
+      return;
+    }
+
+    setSubmitError(null);
     setSubmitting(true);
+
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fromCity: form.fromCity,
+          destinations: form.destinations,
+          group: form.group,
+          groupSize: form.groupSize,
+          budget: form.budget,
+          startDate: form.skipDates ? undefined : form.startDate || undefined,
+          endDate: form.skipDates ? undefined : form.endDate || undefined,
+          skipDates: form.skipDates,
+          interests: form.interests,
+          pace: form.pace,
+          hotelType: form.hotelType,
+          notes: form.notes,
+        }),
+      });
+
+      if (res.status === 401) {
+        toast.error("Your session expired. Sign in again.");
+        router.push(`/auth?next=${encodeURIComponent("/generate")}`);
+        return;
+      }
+
+      const data = await res.json();
+      if (!res.ok || !data?.id) {
+        throw new Error(data?.error ?? "Generation failed. Please try again.");
+      }
+
+      // Draft was successful — clear it so a new wizard run starts fresh.
+      clear();
+      router.push(`/itinerary/${data.id}`);
+    } catch (err) {
+      setSubmitting(false);
+      const msg = err instanceof Error ? err.message : "Something went wrong.";
+      setSubmitError(msg);
+      toast.error(msg);
+    }
   }
 
   function back() {
@@ -151,14 +203,15 @@ export default function GenerateWizard() {
   if (submitting) {
     return (
       <GeneratingLoader
+        indeterminate
         lines={[
-          "Finding the best routes…",
-          "Checking real-time weather forecasts…",
-          "Sourcing flight & hotel prices…",
-          "Building your day-by-day plan…",
+          "Looking up transport options…",
+          "Checking hotel prices for your dates…",
+          "Reading destination knowledge from our travel database…",
+          "Comparing prices to typical seasonal rates…",
+          "Drafting your day-by-day plan…",
+          "Almost there — finalising the itinerary…",
         ]}
-        durationMs={2400}
-        onDone={() => router.push("/itinerary/preview")}
       />
     );
   }
@@ -183,6 +236,11 @@ export default function GenerateWizard() {
           onContinue={handleContinue}
           onDiscard={handleDiscard}
         />
+      )}
+      {submitError && (
+        <div className="mb-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {submitError}
+        </div>
       )}
       {step === 1 && <StepDeparture form={form} setForm={setForm} />}
       {step === 2 && <StepDestinations form={form} setForm={setForm} />}

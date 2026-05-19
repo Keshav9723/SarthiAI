@@ -12,11 +12,20 @@ interface OllamaEmbedResponse {
   embedding: number[];
 }
 
+// mxbai-embed-large has a 512-token context window. The chunker targets ~380
+// tokens, but our chars/4 estimator is approximate and dense English prose
+// can pack 5+ chars/token. Hard-truncate any input that exceeds ~470 tokens
+// worth of chars (≈ 1880 chars) to guarantee we never overflow Ollama.
+const MAX_EMBED_CHARS = 1880;
+
 export async function embed(text: string): Promise<number[]> {
+  const safeText =
+    text.length > MAX_EMBED_CHARS ? text.slice(0, MAX_EMBED_CHARS) : text;
+
   const res = await fetch(`${OLLAMA_BASE_URL}/api/embeddings`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: EMBED_MODEL, prompt: text }),
+    body: JSON.stringify({ model: EMBED_MODEL, prompt: safeText }),
   });
 
   if (!res.ok) {
