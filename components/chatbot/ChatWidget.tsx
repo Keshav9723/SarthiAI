@@ -19,12 +19,13 @@ import {
 } from "@/components/ui/Icons";
 import {
   getOpener,
-  getBotResponse,
   getSuggestedChips,
   getItineraryById,
   type ChatMessage,
   type PageContext,
 } from "@/lib/mockData";
+import { useChatStream } from "@/lib/useChatStream";
+import MarkdownLite from "./MarkdownLite";
 
 function pathToContext(path: string | null): PageContext {
   if (!path) return "default";
@@ -51,14 +52,64 @@ export default function ChatWidget() {
   }, [context, params]);
 
   const [isOpen, setIsOpen] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false); // wider panel when true
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [showChips, setShowChips] = useState(true);
   const [unread, setUnread] = useState(true);
+  // The id of the in-flight bot message we're streaming text into. When null,
+  // no streaming is happening.
+  const [streamingBotId, setStreamingBotId] = useState<string | null>(null);
+  // Per-message metadata (sources, deep links, etc.) sent by handler `metadata`
+  // events. Keyed by message id so source pills render below the right bubble.
+  const [messageMetadata, setMessageMetadata] = useState<
+    Record<string, Record<string, unknown>>
+  >({});
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Wire the SSE stream from /api/chat. The callbacks append tokens to the
+  // currently-streaming bot message, then finalise it on `done`.
+  const streamingBotIdRef = useRef<string | null>(null);
+  streamingBotIdRef.current = streamingBotId;
+
+  const { send: sendToApi } = useChatStream({
+    onIntent: (intent, confidence) => {
+      // For debugging — uncomment to see intents land in console
+      // console.log("[chat] intent:", intent, "confidence:", confidence);
+    },
+    onToken: (content) => {
+      const id = streamingBotIdRef.current;
+      if (!id) return;
+      setMessages((prev) =>
+        prev.map((m) => (m.id === id ? { ...m, text: m.text + content } : m))
+      );
+    },
+    onMetadata: (data) => {
+      const id = streamingBotIdRef.current;
+      if (!id) return;
+      setMessageMetadata((prev) => ({ ...prev, [id]: data }));
+    },
+    onError: (msg) => {
+      const id = streamingBotIdRef.current;
+      if (!id) return;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === id
+            ? { ...m, text: m.text + (m.text ? "\n\n" : "") + `⚠ ${msg}` }
+            : m
+        )
+      );
+    },
+    onDone: () => {
+      setStreamingBotId(null);
+      streamingBotIdRef.current = null;
+      setIsTyping(false);
+      setShowChips(true);
+    },
+  });
 
   // Seed the conversation with the context-tuned opener whenever the page changes.
   useEffect(() => {
@@ -159,7 +210,7 @@ export default function ChatWidget() {
 
   function send(text: string) {
     const trimmed = text.trim();
-    if (!trimmed || isTyping) return;
+    if (!trimmed || isTyping || streamingBotId) return;
 
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
@@ -167,22 +218,39 @@ export default function ChatWidget() {
       text: trimmed,
       timestamp: new Date().toISOString(),
     };
-    setMessages((prev) => [...prev, userMsg]);
+    // Pre-create an empty bot message we'll stream tokens into.
+    const botId = `b-${Date.now()}`;
+    const botMsg: ChatMessage = {
+      id: botId,
+      sender: "bot",
+      text: "",
+      timestamp: new Date().toISOString(),
+    };
+
+    setMessages((prev) => [...prev, userMsg, botMsg]);
     setInput("");
     setShowChips(false);
     setIsTyping(true);
+    setStreamingBotId(botId);
+    streamingBotIdRef.current = botId;
 
-    window.setTimeout(() => {
-      const botMsg: ChatMessage = {
-        id: `b-${Date.now()}`,
-        sender: "bot",
-        text: getBotResponse(trimmed, context),
-        timestamp: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, botMsg]);
-      setIsTyping(false);
-      setShowChips(true);
-    }, 1000);
+    // Build conversation history for the API (last 6 turns, excluding the
+    // empty bot message we just pushed)
+    const history = messages
+      .slice(-6)
+      .filter((m) => m.text.trim().length > 0)
+      .map((m) => ({
+        role: m.sender === "user" ? ("user" as const) : ("assistant" as const),
+        content: m.text,
+      }))
+      .concat([{ role: "user", content: trimmed }]);
+
+    sendToApi({
+      message: trimmed,
+      history,
+      pageContext: context,
+      pageDestination: destination,
+    });
   }
 
   // Keep the ref pointed at the latest `send` so external triggers always
@@ -238,7 +306,9 @@ export default function ChatWidget() {
             role="dialog"
             aria-modal="true"
             aria-label="Sarthi AI assistant"
-            className="fixed top-0 right-0 z-50 h-[100dvh] w-full md:w-[400px] bg-white shadow-chat flex flex-col animate-slide-in-right border-l border-gray-100"
+            className={`fixed top-0 right-0 z-50 h-[100dvh] w-full bg-white shadow-chat flex flex-col animate-slide-in-right border-l border-gray-100 transition-[width] duration-300 ease-out ${
+              isExpanded ? "md:w-[min(720px,55vw)]" : "md:w-[400px]"
+            }`}
           >
             {/* Header */}
             <div className="shrink-0 px-5 py-4 border-b border-gray-100 bg-gradient-to-br from-forest-950 to-green-700 text-white flex items-center gap-3">
@@ -254,6 +324,15 @@ export default function ChatWidget() {
                   Always available · usually replies instantly
                 </p>
               </div>
+              {/* Expand / collapse — only useful on md+ where the panel can grow */}
+              <button
+                onClick={() => setIsExpanded((v) => !v)}
+                aria-label={isExpanded ? "Collapse Sarthi AI" : "Expand Sarthi AI"}
+                title={isExpanded ? "Collapse" : "Expand"}
+                className="hidden md:grid place-items-center w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 transition-colors focus-ring"
+              >
+                {isExpanded ? <CollapseIcon /> : <ExpandIcon />}
+              </button>
               <button
                 onClick={() => setIsOpen(false)}
                 aria-label="Close Sarthi AI"
@@ -269,9 +348,19 @@ export default function ChatWidget() {
               className="flex-1 overflow-y-auto thin-scrollbar px-4 py-5 space-y-3 bg-cream"
             >
               {messages.map((m) => (
-                <MessageBubble key={m.id} message={m} />
+                <MessageBubble
+                  key={m.id}
+                  message={m}
+                  metadata={messageMetadata[m.id]}
+                />
               ))}
-              {isTyping && <TypingBubble />}
+              {/* Show typing dots only while we're waiting for the FIRST token
+                  on a streaming reply — once tokens start arriving, the bot
+                  bubble itself shows progress. */}
+              {isTyping && streamingBotId &&
+                messages.find((m) => m.id === streamingBotId)?.text.length === 0 && (
+                <TypingBubble />
+              )}
             </div>
 
             {/* Suggested chips */}
@@ -325,8 +414,16 @@ export default function ChatWidget() {
   );
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({
+  message,
+  metadata,
+}: {
+  message: ChatMessage;
+  metadata?: Record<string, unknown>;
+}) {
   const isUser = message.sender === "user";
+  const sources = Array.isArray(metadata?.sources) ? (metadata!.sources as string[]) : [];
+
   return (
     <div className={`flex gap-2 ${isUser ? "justify-end" : "justify-start"} animate-slide-up`}>
       {!isUser && (
@@ -334,16 +431,97 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           <CompassIcon size={14} strokeWidth={2} />
         </span>
       )}
-      <div
-        className={`max-w-[80%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
-          isUser
-            ? "bg-green-600 text-white rounded-br-sm"
-            : "bg-white text-gray-800 rounded-bl-sm border border-gray-100 shadow-sm"
-        }`}
-      >
-        {message.text}
+      <div className={`max-w-[85%] flex flex-col gap-1.5 ${isUser ? "items-end" : "items-start"}`}>
+        <div
+          className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
+            isUser
+              ? "bg-green-600 text-white rounded-br-sm"
+              : "bg-white text-gray-800 rounded-bl-sm border border-gray-100 shadow-sm"
+          }`}
+        >
+          {isUser ? (
+            // User messages are plain text — no markdown interpretation
+            <p className="whitespace-pre-wrap">{message.text}</p>
+          ) : (
+            // Bot messages get lightweight markdown rendering
+            <MarkdownLite text={message.text} />
+          )}
+        </div>
+        {!isUser && sources.length > 0 && (
+          <SourcePills sources={sources} />
+        )}
       </div>
     </div>
+  );
+}
+
+/** Small grey pills under bot messages showing where the info came from. */
+function SourcePills({ sources }: { sources: string[] }) {
+  return (
+    <div className="flex flex-wrap gap-1 px-1">
+      <span className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase mr-1 self-center">
+        Sources
+      </span>
+      {sources.slice(0, 4).map((url, i) => {
+        const label = labelForSource(url);
+        return (
+          <a
+            key={i}
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 hover:bg-gray-200 text-[11px] font-medium text-gray-700 transition-colors"
+          >
+            {label}
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Turn a long URL into a short human-readable label. */
+function labelForSource(url: string): string {
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes("wikivoyage")) return "Wikivoyage";
+    if (u.hostname.includes("wikipedia")) return "Wikipedia";
+    if (u.hostname.includes("open-meteo")) return "Open-Meteo";
+    if (u.hostname.includes("openstreetmap")) return "OpenStreetMap";
+    return u.hostname.replace(/^www\./, "");
+  } catch {
+    return "Source";
+  }
+}
+
+// Inline SVG icons for the expand/collapse toggle. Kept here (not in Icons.tsx)
+// because they're only used in this one place.
+function ExpandIcon() {
+  return (
+    <svg
+      width="16" height="16" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M15 3h6v6" />
+      <path d="M9 21H3v-6" />
+      <path d="M21 3l-7 7" />
+      <path d="M3 21l7-7" />
+    </svg>
+  );
+}
+function CollapseIcon() {
+  return (
+    <svg
+      width="16" height="16" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M4 14h6v6" />
+      <path d="M20 10h-6V4" />
+      <path d="M14 10l7-7" />
+      <path d="M10 14l-7 7" />
+    </svg>
   );
 }
 

@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import Image from "@/components/ui/SafeImage";
 import WizardShell from "./WizardShell";
 import GeneratingLoader from "./GeneratingLoader";
 import GroupTypeCard from "@/components/cards/GroupTypeCard";
@@ -14,7 +14,6 @@ import { useWizardDraft } from "@/lib/useWizardDraft";
 import {
   MOCK_AVOID_OPTIONS,
   MOCK_GROUP_TYPES,
-  MOCK_SURPRISE_RESULTS,
   MOCK_VIBES,
   destinationHref,
   findItineraryForDestination,
@@ -22,6 +21,7 @@ import {
   type DestinationMatch,
   type GroupType,
 } from "@/lib/mockData";
+import { toast } from "@/lib/toast";
 import {
   ArrowRightIcon,
   SparklesIcon,
@@ -67,6 +67,8 @@ export default function SurpriseWizard() {
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<FormState>(INITIAL);
   const [phase, setPhase] = useState<"input" | "loading" | "results">("input");
+  const [results, setResults] = useState<DestinationMatch[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const { draft, save, clear, hydrated } = useWizardDraft<FormState>(DRAFT_KEY);
   const [resumeDismissed, setResumeDismissed] = useState(false);
@@ -109,14 +111,49 @@ export default function SurpriseWizard() {
     }
   }, [step, form]);
 
-  function next() {
+  async function next() {
     if (step < TOTAL) {
       setStep((s) => s + 1);
-    } else {
-      // User has submitted — the surprise loader will run next. Clear the
-      // draft so refreshing on the results page doesn't re-prompt.
-      clear();
-      setPhase("loading");
+      return;
+    }
+
+    // Final step → call the real scoring API
+    clear();
+    setError(null);
+    setPhase("loading");
+
+    try {
+      const res = await fetch("/api/surprise/score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          group: form.group,
+          groupSize: form.groupSize,
+          vibes: form.vibes,
+          customVibe: form.customVibe || undefined,
+          budget: form.budget,
+          startDate: form.startDate || undefined,
+          endDate: form.endDate || undefined,
+          duration: form.duration,
+          avoid: form.avoid,
+          vegetarian: form.vegetarian,
+          familySafe: form.familySafe,
+          coupleFriendly: form.coupleFriendly,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !Array.isArray(data?.results)) {
+        throw new Error(data?.error ?? "Couldn't find destinations. Try loosening your filters.");
+      }
+
+      setResults(data.results as DestinationMatch[]);
+      setPhase("results");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong.";
+      setError(msg);
+      toast.error(msg);
+      setPhase("input");
     }
   }
   function back() {
@@ -126,20 +163,20 @@ export default function SurpriseWizard() {
   if (phase === "loading") {
     return (
       <GeneratingLoader
+        indeterminate
         lines={[
-          "Analysing weather patterns…",
-          "Scoring 50 Indian destinations…",
-          "Matching to your travel style…",
+          "Checking weather patterns for your travel month…",
+          "Scoring 300+ Indian destinations…",
+          "Matching to your travel style and budget…",
+          "Filtering out things you wanted to avoid…",
           "Shortlisting the 5 best matches…",
         ]}
-        durationMs={2200}
-        onDone={() => setPhase("results")}
       />
     );
   }
 
-  if (phase === "results") {
-    return <Results results={MOCK_SURPRISE_RESULTS} />;
+  if (phase === "results" && results) {
+    return <Results results={results} />;
   }
 
   return (
@@ -162,6 +199,11 @@ export default function SurpriseWizard() {
           onContinue={handleContinue}
           onDiscard={handleDiscard}
         />
+      )}
+      {error && (
+        <div className="mb-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {error}
+        </div>
       )}
       {step === 1 && <StepGroup form={form} setForm={setForm} />}
       {step === 2 && <StepVibes form={form} setForm={setForm} />}

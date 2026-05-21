@@ -11,7 +11,7 @@
 //   4. Past the last day → completion summary
 
 import Link from "next/link";
-import Image from "next/image";
+import Image from "@/components/ui/SafeImage";
 import { useMemo, useState } from "react";
 import {
   ArrowRightIcon,

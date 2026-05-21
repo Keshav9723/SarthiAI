@@ -3,7 +3,7 @@
 // with name in bottom-left, matching the PickYourTrail design language.
 
 import Link from "next/link";
-import Image from "next/image";
+import Image from "@/components/ui/SafeImage";
 import {
   destinationHref,
   findItineraryForDestination,

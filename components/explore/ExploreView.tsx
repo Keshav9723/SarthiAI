@@ -1,18 +1,18 @@
 "use client";
 
 // components/explore/ExploreView.tsx
-// /explore — searchable, filterable destination grid. State is fully client-
-// side; pulls from MOCK_DESTINATIONS. Filters: tag chips (beach, heritage…),
-// best-for chips (couple, family…), and free-text search across name +
-// tagline + description.
+// /explore — searchable, filterable destination grid. The full list of
+// destinations is fetched server-side and passed in via props (so we get
+// real Supabase data + Unsplash-resolved images without bloating the client
+// bundle). Filtering itself is client-side for instant feedback.
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import Image from "@/components/ui/SafeImage";
 import ExploreCard from "./ExploreCard";
 import {
-  MOCK_DESTINATIONS,
   MOCK_GROUP_TYPES,
+  type Destination,
   type GroupType,
 } from "@/lib/mockData";
 import {
@@ -23,20 +23,25 @@ import {
 } from "@/components/ui/Icons";
 import { BLUR_DATA_URL } from "@/lib/blurPlaceholder";
 
-// Build the set of available tags from the data so we never get an empty filter
-// chip when a tag isn't represented.
-const ALL_TAGS = Array.from(
-  new Set(MOCK_DESTINATIONS.flatMap((d) => d.tags))
-).sort();
+interface Props {
+  destinations: Destination[];
+}
 
-export default function ExploreView() {
+export default function ExploreView({ destinations }: Props) {
+  // Available tags come from the fetched data (not a hardcoded list) so the
+  // filter chips always reflect what's actually browseable.
+  const ALL_TAGS = useMemo(
+    () => Array.from(new Set(destinations.flatMap((d) => d.tags))).sort(),
+    [destinations]
+  );
+
   const [query, setQuery] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [bestFor, setBestFor] = useState<GroupType[]>([]);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return MOCK_DESTINATIONS.filter((d) => {
+    return destinations.filter((d) => {
       if (
         q &&
         !d.name.toLowerCase().includes(q) &&
@@ -54,7 +59,7 @@ export default function ExploreView() {
       }
       return true;
     });
-  }, [query, tags, bestFor]);
+  }, [destinations, query, tags, bestFor]);
 
   function toggleTag(t: string) {
     setTags((s) =>

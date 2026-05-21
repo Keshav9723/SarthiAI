@@ -11,6 +11,7 @@
 
 import { findAirport } from "./codes";
 import { generateStructured } from "./llm";
+import { getHotelQuoteRapid } from "./hotels-rapidapi";
 import { z } from "zod";
 
 // We share the Amadeus OAuth helper with the flight wrapper — copy the relevant
@@ -72,15 +73,29 @@ export async function getHotelQuote(opts: {
   nights: number;
   tier: "budget" | "mid" | "luxury";
 }): Promise<HotelQuote> {
+  // 1. Hotels.com via RapidAPI — best India coverage, real prices
+  const rapid = await getHotelQuoteRapid(opts).catch(() => null);
+  if (rapid?.available && rapid.cheapest_inr != null) {
+    return {
+      tier: opts.tier,
+      min_inr_per_night: rapid.cheapest_inr,
+      avg_inr_per_night: rapid.avg_inr ?? rapid.cheapest_inr,
+      max_inr_per_night: rapid.max_inr ?? rapid.cheapest_inr,
+      total_for_stay_inr: (rapid.avg_inr ?? rapid.cheapest_inr) * opts.nights,
+      notes: `Hotels.com — ${rapid.count} ${opts.tier} properties; sample: ${rapid.sample_hotels.map((h) => h.name).slice(0, 2).join(", ")}`,
+      is_mock: false,
+    };
+  }
+
+  // 2. Amadeus — fallback, weaker India coverage
   const iata = findAirport(opts.destination);
   const token = iata ? await getAmadeusToken() : null;
-
   if (token && iata) {
     const real = await tryAmadeusHotels(token, iata, opts);
     if (real) return real;
   }
 
-  // Fall back to LLM-judged band
+  // 3. LLM-judged price band — last resort
   return await llmEstimateHotel(opts);
 }
 

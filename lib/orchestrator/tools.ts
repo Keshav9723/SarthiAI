@@ -7,11 +7,12 @@
 import { z } from "zod";
 import { retrieveContext } from "@/lib/api/rag";
 import { createServerClient } from "@/lib/supabase/server";
-import { getFlightQuote } from "@/lib/api/amadeus";
+import { getFlightQuote } from "@/lib/api/flights";  // ← SearchAPI → Amadeus → mock fallback
 import { getTrainQuote } from "@/lib/api/trains";
 import { getDrivingRoute } from "@/lib/api/maps";
 import { getHotelQuote } from "@/lib/api/hotels";
 import { comparePriceToTypical } from "@/lib/api/insights";
+import { getHolidaysForTrip } from "@/lib/api/calendarific";
 import { distanceBetween } from "@/lib/api/codes";
 import {
   GetDestinationFactsArgs, GetDestinationFactsResult,
@@ -20,6 +21,7 @@ import {
   GetHotelPricesArgs, GetHotelPricesResult,
   GetLocalTransportArgs, GetLocalTransportResult,
   CompareToTypicalArgs, CompareToTypicalResult,
+  GetFestivalsArgs, GetFestivalsResult,
   type TransportModeQuote,
 } from "@/lib/schemas/tools";
 import type { ToolSpec } from "./types";
@@ -382,6 +384,48 @@ export const compareToTypicalTool: ToolSpec<
 };
 
 // ===========================================================================
+// 7. get_festivals — Calendarific holidays + cultural events
+// ===========================================================================
+
+export const getFestivalsTool: ToolSpec<
+  z.infer<typeof GetFestivalsArgs>,
+  z.infer<typeof GetFestivalsResult>
+> = {
+  name: "get_festivals",
+  description:
+    "Get public holidays + cultural festivals happening in a given month/year, " +
+    "optionally narrowed by destination. Use this to enrich itineraries with " +
+    "festivals the traveller might catch (e.g. Holi in March, Onam in Aug-Sep).",
+  argsSchema: GetFestivalsArgs,
+  resultSchema: GetFestivalsResult,
+  jsonSchema: {
+    type: "object",
+    properties: {
+      month: { type: "integer", minimum: 1, maximum: 12 },
+      year: { type: "integer", minimum: 2024, maximum: 2030 },
+      destination: { type: "string", description: "Optional — filter to festivals relevant to this place" },
+    },
+    required: ["month", "year"],
+  },
+  handler: async (args) => {
+    const holidays = await getHolidaysForTrip({
+      destination: args.destination,
+      month: args.month,
+      year: args.year,
+    });
+    return {
+      festivals: holidays.slice(0, 8).map((h) => ({
+        name: h.name,
+        date: h.date,
+        type: h.type,
+        description: h.description.slice(0, 220),
+        locations: h.locations ?? null,
+      })),
+    };
+  },
+};
+
+// ===========================================================================
 // The registry
 // ===========================================================================
 
@@ -392,6 +436,7 @@ export const ALL_TOOLS: ToolSpec[] = [
   getHotelPricesTool,
   getLocalTransportEstimateTool,
   compareToTypicalTool,
+  getFestivalsTool,
 ];
 
 /** Convert tool registry into the JSON-shape Ollama's /api/chat expects. */

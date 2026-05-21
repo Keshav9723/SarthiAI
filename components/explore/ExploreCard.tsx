@@ -4,7 +4,7 @@
 // existing itinerary or the Generate wizard). Browsing > planning here.
 
 import Link from "next/link";
-import Image from "next/image";
+import Image from "@/components/ui/SafeImage";
 import {
   findItineraryForDestination,
   formatINRCompact,

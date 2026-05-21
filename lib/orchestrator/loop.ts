@@ -6,14 +6,16 @@
 
 import { ollamaChat, type ChatMessage } from "@/lib/api/llm/ollama-chat";
 import { geminiChat } from "@/lib/api/llm/gemini-chat";
+import { openrouterChat } from "@/lib/api/llm/openrouter-chat";
 import { toolsForLLM } from "./tools";
 
 function getChatCaller() {
   const p = (process.env.LLM_PROVIDER ?? "ollama").toLowerCase();
   if (p === "gemini") return geminiChat;
+  if (p === "openrouter") return openrouterChat;
   if (p === "claude") {
     throw new Error(
-      "Claude chat wrapper not implemented yet. Use LLM_PROVIDER=gemini or LLM_PROVIDER=ollama."
+      "Claude chat wrapper not implemented yet. Use LLM_PROVIDER=gemini, openrouter, or ollama."
     );
   }
   return ollamaChat;
@@ -48,6 +50,10 @@ export async function runOrchestrator<TFinal>(
   // model returned prose. One nudge max per run — prevents infinite loops if
   // the model is genuinely unable to comply.
   let jsonNudgeUsed = false;
+  // Same idea for "finalize now" — fires once when the model spends too many
+  // iterations gathering tool data without producing a final answer.
+  let finalizeNudgeUsed = false;
+  const finalizeAfter = Math.max(4, Math.ceil(maxIterations * 0.7));
 
   for (let i = 1; i <= maxIterations; i++) {
     // ----- 1. Call the model -----
@@ -134,6 +140,16 @@ export async function runOrchestrator<TFinal>(
       };
     }
 
+    // ----- 2b. If we're past the budget for exploration, nudge the model
+    //          to wrap up and emit the final itinerary. Only once. -----
+    if (!finalizeNudgeUsed && i >= finalizeAfter) {
+      finalizeNudgeUsed = true;
+      // Append BEFORE executing the requested tools so they still run, but
+      // the model sees on the NEXT turn that it should now finalize.
+      // We do this by pushing both the tool results AND the nudge below.
+      // (handled at the end of this for-loop)
+    }
+
     // ----- 3. Execute each requested tool, append results -----
     for (const call of requests) {
       const name = call.function.name;
@@ -191,6 +207,19 @@ export async function runOrchestrator<TFinal>(
           content: JSON.stringify({ error: errMsg }),
         });
       }
+    }
+
+    // If we're past the exploration budget, push a finalize nudge so the
+    // model sees it AFTER all the tool results this turn. Next iteration
+    // it should stop calling tools and emit the JSON itinerary.
+    if (finalizeNudgeUsed && i === finalizeAfter) {
+      conversation.push({
+        role: "user",
+        content:
+          `You have now gathered enough information across ${toolCalls.length} tool calls. ` +
+          `STOP calling tools. On your next turn, emit the FINAL itinerary as a single JSON object ` +
+          `matching the schema in the system prompt. No more tool calls, no prose — just the JSON.`,
+      });
     }
   }
 

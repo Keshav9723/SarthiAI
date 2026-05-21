@@ -224,7 +224,7 @@ export const MOCK_DESTINATIONS: Destination[] = [
       "https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=1200",
     gallery: [
       "https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=800",
-      "https://images.unsplash.com/photo-1582550945154-d2c2c3e2bdb1?w=800",
+      "https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=800",
       "https://images.unsplash.com/photo-1614082242765-7c98ca0f3df3?w=800",
     ],
     tags: ["beach", "party", "relaxed"],
@@ -534,7 +534,7 @@ export const MOCK_ITINERARIES: Itinerary[] = [
       "https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=1200",
     gallery: [
       "https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=1200",
-      "https://images.unsplash.com/photo-1582550945154-d2c2c3e2bdb1?w=800",
+      "https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=800",
       "https://images.unsplash.com/photo-1614082242765-7c98ca0f3df3?w=800",
       "https://images.unsplash.com/photo-1571432248690-7fd6980a1ae2?w=800",
     ],
@@ -1110,9 +1110,9 @@ export const MOCK_ITINERARIES: Itinerary[] = [
     groupType: "friends",
     groupSize: 4,
     image:
-      "https://images.unsplash.com/photo-1591018653488-65fe7d6bf75d?w=1200",
+      "https://images.unsplash.com/photo-1532375810709-75b1da00537c?w=1200",
     gallery: [
-      "https://images.unsplash.com/photo-1591018653488-65fe7d6bf75d?w=1200",
+      "https://images.unsplash.com/photo-1532375810709-75b1da00537c?w=1200",
       "https://images.unsplash.com/photo-1626621261140-3491f1f00ce4?w=800",
       "https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=800",
       "https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=800",
@@ -1304,9 +1304,9 @@ export const MOCK_ITINERARIES: Itinerary[] = [
     groupType: "family",
     groupSize: 4,
     image:
-      "https://images.unsplash.com/photo-1609151346744-58ddd4e3fc44?w=1200",
+      "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1200",
     gallery: [
-      "https://images.unsplash.com/photo-1609151346744-58ddd4e3fc44?w=1200",
+      "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=1200",
       "https://images.unsplash.com/photo-1583292650898-7d22cd27ca6f?w=800",
       "https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=800",
       "https://images.unsplash.com/photo-1590073242678-70ee3fc28e8e?w=800",
@@ -1741,7 +1741,7 @@ export const MOCK_PACKAGES: Package[] = [
     durationBucket: "short",
     pricePerPerson: 14999,
     image:
-      "https://images.unsplash.com/photo-1582550945154-d2c2c3e2bdb1?w=800",
+      "https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=800",
     highlights: ["Baga Beach stay", "Saturday night market", "Cruise dinner"],
     groupType: "friends",
   },
@@ -1817,7 +1817,7 @@ export const MOCK_PACKAGES: Package[] = [
     durationBucket: "long",
     pricePerPerson: 42999,
     image:
-      "https://images.unsplash.com/photo-1591018653488-65fe7d6bf75d?w=800",
+      "https://images.unsplash.com/photo-1532375810709-75b1da00537c?w=800",
     highlights: ["Khardung La pass", "Pangong Lake camp", "Hemis monastery"],
     groupType: "friends",
   },
@@ -1829,7 +1829,7 @@ export const MOCK_PACKAGES: Package[] = [
     durationBucket: "long",
     pricePerPerson: 49999,
     image:
-      "https://images.unsplash.com/photo-1609151346744-58ddd4e3fc44?w=800",
+      "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=800",
     highlights: ["Living root bridges", "One-horned rhino safari", "Cherrapunji falls"],
     groupType: "family",
   },

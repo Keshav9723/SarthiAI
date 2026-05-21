@@ -10,6 +10,7 @@ import LocationGroupHeader from "./LocationGroupHeader";
 import DayRow from "./DayRow";
 import TransitConnector from "./TransitConnector";
 import RouteSidebar from "./RouteSidebar";
+import TripMap from "./TripMap";
 import {
   formatINR,
   type Itinerary,
@@ -98,6 +99,12 @@ export default function ItineraryView({
           </div>
 
           {tab === "trip" && (
+            <>
+            <TripMap
+              destination={itinerary.destination}
+              stops={itinerary.route.map((s) => ({ city: s.city }))}
+              fromCity={itinerary.fromCity}
+            />
             <section className="mt-6">
               <h2 className="text-xl font-bold tracking-tight text-gray-900">
                 Itinerary
@@ -122,6 +129,7 @@ export default function ItineraryView({
                 ))}
               </div>
             </section>
+            </>
           )}
 
           {tab === "inclusions" && (

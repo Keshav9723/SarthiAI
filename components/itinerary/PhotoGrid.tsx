@@ -6,7 +6,7 @@
 // Clicking any image opens the fullscreen Lightbox.
 
 import { useState } from "react";
-import Image from "next/image";
+import Image from "@/components/ui/SafeImage";
 import { SparklesIcon } from "@/components/ui/Icons";
 import { BLUR_DATA_URL } from "@/lib/blurPlaceholder";
 import Lightbox from "@/components/ui/Lightbox";

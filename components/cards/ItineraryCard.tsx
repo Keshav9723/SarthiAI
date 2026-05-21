@@ -2,7 +2,7 @@
 // Card used by Homepage "Recently Generated" rail and My Itineraries grid.
 
 import Link from "next/link";
-import Image from "next/image";
+import Image from "@/components/ui/SafeImage";
 import { formatINR, type Itinerary } from "@/lib/mockData";
 import { MapPinIcon, ArrowRightIcon } from "@/components/ui/Icons";
 import { BLUR_DATA_URL } from "@/lib/blurPlaceholder";

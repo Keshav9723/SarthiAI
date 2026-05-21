@@ -13,13 +13,14 @@ import { z } from "zod";
 import { ollamaGenerate, type OllamaGenerateInput } from "./llm/ollama";
 import { claudeGenerate } from "./llm/claude";
 import { geminiGenerate } from "./llm/gemini";
+import { openrouterGenerate } from "./llm/openrouter";
 
-export type LLMProvider = "ollama" | "claude" | "gemini";
+export type LLMProvider = "ollama" | "claude" | "gemini" | "openrouter";
 
 function getProvider(): LLMProvider {
   const v = (process.env.LLM_PROVIDER ?? "ollama").toLowerCase();
-  if (v === "ollama" || v === "claude" || v === "gemini") return v;
-  throw new Error(`Unknown LLM_PROVIDER "${v}". Use "ollama", "gemini", or "claude".`);
+  if (v === "ollama" || v === "claude" || v === "gemini" || v === "openrouter") return v;
+  throw new Error(`Unknown LLM_PROVIDER "${v}". Use "ollama", "gemini", "openrouter", or "claude".`);
 }
 
 export interface GenerateStructuredOptions<T extends z.ZodTypeAny> {
@@ -45,6 +46,7 @@ export async function generateStructured<T extends z.ZodTypeAny>(
   const callModel: (input: OllamaGenerateInput) => Promise<string> =
     provider === "claude" ? claudeGenerate :
     provider === "gemini" ? geminiGenerate :
+    provider === "openrouter" ? openrouterGenerate :
     ollamaGenerate;
 
   const maxRetries = opts.maxRetries ?? 1;
@@ -98,6 +100,7 @@ export async function generateText(opts: {
   const callModel: (input: OllamaGenerateInput) => Promise<string> =
     provider === "claude" ? claudeGenerate :
     provider === "gemini" ? geminiGenerate :
+    provider === "openrouter" ? openrouterGenerate :
     ollamaGenerate;
   return callModel({
     system: opts.system,

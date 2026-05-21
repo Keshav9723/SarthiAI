@@ -4,9 +4,9 @@
 // Detail view for a single budget. All state lives in React useState — no
 // backend persistence — so adding/removing expenses updates totals live.
 
-import Image from "next/image";
+import Image from "@/components/ui/SafeImage";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   formatINR,
   type Budget,
@@ -25,13 +25,17 @@ import {
 
 interface Props {
   budget: Budget;
+  /** "api" → persist mutations via /api/budget/*. "local" → state-only, for mock budgets. */
+  persistMode?: "api" | "local";
 }
 
-export default function BudgetDetail({ budget: initial }: Props) {
+export default function BudgetDetail({ budget: initial, persistMode = "local" }: Props) {
   const [categories, setCategories] = useState<BudgetCategory[]>(
     initial.categories
   );
   const [openCategoryId, setOpenCategoryId] = useState<string | null>(null);
+  const budgetId = initial.id;
+  const isApi = persistMode === "api";
 
   const totals = useMemo(() => {
     const planned = categories.reduce((s, c) => s + c.planned, 0);
@@ -41,64 +45,177 @@ export default function BudgetDetail({ budget: initial }: Props) {
     return { planned, spent, remaining, percentUsed };
   }, [categories]);
 
-  function addExpense(catId: string, expense: Omit<BudgetExpense, "id">) {
-    const id =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : Math.random().toString(36).slice(2);
+  // ----- Mutations -----
+  // Each one updates local state OPTIMISTICALLY for snappy UI, then fires the
+  // API call. On API error we revert the optimistic change and toast the error.
+
+  async function addExpense(catId: string, expense: Omit<BudgetExpense, "id">) {
+    // Optimistic: temporary id so the UI renders immediately
+    const tempId = `temp-${Date.now()}`;
     setCategories((cs) =>
       cs.map((c) =>
         c.id === catId
           ? {
               ...c,
               spent: c.spent + expense.amount,
-              expenses: [...c.expenses, { ...expense, id }],
+              expenses: [...c.expenses, { ...expense, id: tempId }],
             }
           : c
       )
     );
-    toast.success(`Added ${formatINR(expense.amount)} to your budget.`);
+
+    if (!isApi) {
+      toast.success(`Added ${formatINR(expense.amount)} to your budget.`);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/budget/${budgetId}/expenses`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          categoryId: catId,
+          label: expense.label,
+          amount: expense.amount,
+          date: expense.date,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.id) throw new Error(data?.error ?? "Couldn't save expense");
+      // Swap temp id for the real uuid the server assigned
+      setCategories((cs) =>
+        cs.map((c) =>
+          c.id === catId
+            ? { ...c, expenses: c.expenses.map((e) => (e.id === tempId ? { ...e, id: data.id } : e)) }
+            : c
+        )
+      );
+      toast.success(`Added ${formatINR(expense.amount)} to your budget.`);
+    } catch (err) {
+      // Revert
+      setCategories((cs) =>
+        cs.map((c) =>
+          c.id === catId
+            ? {
+                ...c,
+                spent: Math.max(0, c.spent - expense.amount),
+                expenses: c.expenses.filter((e) => e.id !== tempId),
+              }
+            : c
+        )
+      );
+      toast.error(err instanceof Error ? err.message : "Couldn't save expense");
+    }
   }
 
-  function removeExpense(catId: string, expId: string) {
-    setCategories((cs) =>
-      cs.map((c) => {
-        if (c.id !== catId) return c;
-        const exp = c.expenses.find((e) => e.id === expId);
-        if (!exp) return c;
-        return {
-          ...c,
-          spent: Math.max(0, c.spent - exp.amount),
-          expenses: c.expenses.filter((e) => e.id !== expId),
-        };
-      })
-    );
-    toast.info("Expense removed.");
-  }
+  async function removeExpense(catId: string, expId: string) {
+    const cat = categories.find((c) => c.id === catId);
+    const exp = cat?.expenses.find((e) => e.id === expId);
+    if (!exp) return;
 
-  function updatePlanned(catId: string, value: number) {
+    // Optimistic: drop it from state
     setCategories((cs) =>
       cs.map((c) =>
-        c.id === catId ? { ...c, planned: Math.max(0, value) } : c
+        c.id === catId
+          ? {
+              ...c,
+              spent: Math.max(0, c.spent - exp.amount),
+              expenses: c.expenses.filter((e) => e.id !== expId),
+            }
+          : c
       )
     );
+
+    if (!isApi || expId.startsWith("temp-")) {
+      toast.info("Expense removed.");
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/budget/${budgetId}/expenses/${expId}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? "Couldn't remove expense");
+      toast.info("Expense removed.");
+    } catch (err) {
+      // Revert
+      setCategories((cs) =>
+        cs.map((c) =>
+          c.id === catId
+            ? {
+                ...c,
+                spent: c.spent + exp.amount,
+                expenses: [...c.expenses, exp],
+              }
+            : c
+        )
+      );
+      toast.error(err instanceof Error ? err.message : "Couldn't remove expense");
+    }
   }
 
-  function addCategory(label: string) {
+  // Updating planned amount fires on EVERY keystroke when the user is typing —
+  // debounce the API call so we don't spam the server. Local state still
+  // updates instantly for snappy UI.
+  const plannedTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  function updatePlanned(catId: string, value: number) {
+    const safe = Math.max(0, Math.round(value));
+    setCategories((cs) =>
+      cs.map((c) => (c.id === catId ? { ...c, planned: safe } : c))
+    );
+    if (!isApi) return;
+    if (plannedTimers.current[catId]) clearTimeout(plannedTimers.current[catId]);
+    plannedTimers.current[catId] = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/budget/${budgetId}/categories/${catId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ planned: safe }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data?.error ?? "Couldn't update planned amount");
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Update failed");
+      }
+    }, 500);
+  }
+
+  async function addCategory(label: string) {
     if (!label.trim()) return;
-    const id = label.toLowerCase().replace(/\s+/g, "-") + "-" + Date.now();
-    setCategories((cs) => [
-      ...cs,
-      {
-        id,
-        label,
-        icon: "🧾",
-        planned: 0,
-        spent: 0,
-        expenses: [],
-      },
-    ]);
-    toast.success("Category added.");
+    const tempId = "temp-" + label.toLowerCase().replace(/\s+/g, "-") + "-" + Date.now();
+    const optimisticCat: BudgetCategory = {
+      id: tempId,
+      label,
+      icon: "🧾",
+      planned: 0,
+      spent: 0,
+      expenses: [],
+    };
+    setCategories((cs) => [...cs, optimisticCat]);
+
+    if (!isApi) {
+      toast.success("Category added.");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/budget/${budgetId}/categories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.id) throw new Error(data?.error ?? "Couldn't add category");
+      setCategories((cs) =>
+        cs.map((c) => (c.id === tempId ? { ...c, id: data.id } : c))
+      );
+      toast.success("Category added.");
+    } catch (err) {
+      setCategories((cs) => cs.filter((c) => c.id !== tempId));
+      toast.error(err instanceof Error ? err.message : "Couldn't add category");
+    }
   }
 
   return (

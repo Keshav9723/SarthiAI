@@ -119,7 +119,7 @@ export async function POST(req: NextRequest) {
     user: user_prompt,
     tools: ALL_TOOLS,
     finalSchema: ItinerarySchema,
-    maxIterations: 12,
+    maxIterations: 15,    // 70% threshold ≈ 11 → finalize nudge fires at iter 11
     temperature: 0.3,
   });
 

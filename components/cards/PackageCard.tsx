@@ -5,7 +5,7 @@
 // pre-filled so the user can customise.
 
 import Link from "next/link";
-import Image from "next/image";
+import Image from "@/components/ui/SafeImage";
 import {
   destinationHref,
   findItineraryForDestination,

@@ -1,16 +1,22 @@
 "use client";
 
 // components/budget/BudgetOverview.tsx
-// Overview page: top stats + list of every budget the user owns.
+// Overview page: top stats + list of the user's budgets. When signed in we
+// fetch their real budgets from /api/budget; when signed out we fall back to
+// MOCK_BUDGETS so the page still demos.
 
 import Link from "next/link";
-import Image from "next/image";
-import { useMemo } from "react";
+import Image from "@/components/ui/SafeImage";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   MOCK_BUDGETS,
   calcBudgetTotals,
   formatINR,
+  type Budget,
 } from "@/lib/mockData";
+import { useAuth } from "@/lib/useAuth";
+import { toast } from "@/lib/toast";
 import {
   WalletIcon,
   ArrowRightIcon,
@@ -18,13 +24,66 @@ import {
 } from "@/components/ui/Icons";
 
 export default function BudgetOverview() {
+  const router = useRouter();
+  const { user, hydrated } = useAuth();
+  const [budgets, setBudgets] = useState<Budget[]>(MOCK_BUDGETS);
+  const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
+
+  // When auth state resolves, fetch the user's real budgets (if signed in).
+  useEffect(() => {
+    if (!hydrated) return;
+    if (!user) {
+      setBudgets(MOCK_BUDGETS);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    fetch("/api/budget")
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        const real: Budget[] = Array.isArray(data?.budgets) ? data.budgets : [];
+        // If the user has 0 real budgets, still show mocks so the page isn't
+        // empty during demo. Signed-in users with their own budgets see ONLY
+        // their own (no mock contamination).
+        setBudgets(real.length > 0 ? real : MOCK_BUDGETS);
+      })
+      .finally(() => !cancelled && setLoading(false));
+    return () => { cancelled = true; };
+  }, [user, hydrated]);
+
   const totals = useMemo(() => {
-    const planned = MOCK_BUDGETS.reduce((s, b) => s + b.totalPlanned, 0);
-    const spent = MOCK_BUDGETS.reduce((s, b) => s + b.totalSpent, 0);
+    const planned = budgets.reduce((s, b) => s + b.totalPlanned, 0);
+    const spent = budgets.reduce((s, b) => s + b.totalSpent, 0);
     const remaining = planned - spent;
     const percentUsed = planned > 0 ? Math.round((spent / planned) * 100) : 0;
     return { planned, spent, remaining, percentUsed };
-  }, []);
+  }, [budgets]);
+
+  async function handleCreateBudget() {
+    if (!user) {
+      toast.error("Sign in to create a budget.");
+      router.push("/auth?next=/budget");
+      return;
+    }
+    const name = window.prompt("Name this budget (e.g. 'Goa December trip')");
+    if (!name?.trim()) return;
+    setCreating(true);
+    try {
+      const res = await fetch("/api/budget", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.id) throw new Error(data?.error ?? "Couldn't create budget");
+      router.push(`/budget/${data.id}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed");
+      setCreating(false);
+    }
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-8 py-12">
@@ -39,10 +98,12 @@ export default function BudgetOverview() {
         </div>
         <button
           type="button"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-green-600 hover:bg-green-700 text-white font-semibold transition-colors"
+          onClick={handleCreateBudget}
+          disabled={creating}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white font-semibold transition-colors"
         >
           <PlusIcon size={16} />
-          Create New Budget
+          {creating ? "Creating…" : "Create New Budget"}
         </button>
       </header>
 
@@ -63,8 +124,11 @@ export default function BudgetOverview() {
       </div>
 
       {/* List */}
+      {loading && (
+        <p className="mt-8 text-sm text-gray-500">Loading your budgets…</p>
+      )}
       <ul className="mt-8 space-y-3">
-        {MOCK_BUDGETS.map((b) => {
+        {budgets.map((b) => {
           const t = calcBudgetTotals(b);
           return (
             <li

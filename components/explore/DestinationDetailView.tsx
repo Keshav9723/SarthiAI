@@ -3,7 +3,7 @@
 // Server-renderable; only the FAQ accordion is a Client child.
 
 import Link from "next/link";
-import Image from "next/image";
+import Image from "@/components/ui/SafeImage";
 import DestinationFAQ from "./DestinationFAQ";
 import DestinationGallery from "./DestinationGallery";
 import ItineraryCard from "@/components/cards/ItineraryCard";

@@ -5,7 +5,7 @@
 // the rest are square. Lightbox renders the full set in order.
 
 import { useState } from "react";
-import Image from "next/image";
+import Image from "@/components/ui/SafeImage";
 import Lightbox from "@/components/ui/Lightbox";
 import { BLUR_DATA_URL } from "@/lib/blurPlaceholder";
 

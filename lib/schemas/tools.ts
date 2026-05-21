@@ -149,3 +149,27 @@ export const CompareToTypicalResult = z.object({
   recommendation: z.string(),
 });
 export type CompareToTypicalResult = z.infer<typeof CompareToTypicalResult>;
+
+// ===========================================================================
+// get_festivals — Calendarific holidays + cultural events
+// ===========================================================================
+
+export const GetFestivalsArgs = z.object({
+  month: z.number().int().min(1).max(12),
+  year: z.number().int().min(2024).max(2030),
+  destination: z.string().optional(),  // narrows by location if set
+});
+export type GetFestivalsArgs = z.infer<typeof GetFestivalsArgs>;
+
+export const GetFestivalsResult = z.object({
+  festivals: z.array(
+    z.object({
+      name: z.string(),
+      date: z.string(),
+      type: z.array(z.string()),
+      description: z.string(),
+      locations: z.string().nullable(),
+    })
+  ),
+});
+export type GetFestivalsResult = z.infer<typeof GetFestivalsResult>;
