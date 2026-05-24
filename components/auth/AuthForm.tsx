@@ -1,9 +1,10 @@
 "use client";
 
 // components/auth/AuthForm.tsx
-// Real Supabase auth — email/password sign-up + sign-in + Google/Apple OAuth.
-// After a successful auth, supabase.auth.onAuthStateChange in useAuth fires
-// and every component using useAuth re-renders. We just need to redirect.
+// Real Supabase auth — email/password sign-up + sign-in + Google OAuth +
+// forgot-password reset flow. After a successful auth, the
+// supabase.auth.onAuthStateChange listener in useAuth fires and every
+// component using useAuth re-renders. We just need to redirect.
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -16,7 +17,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "@/lib/toast";
 
-type Mode = "login" | "signup";
+type Mode = "login" | "signup" | "reset";
 
 export default function AuthForm() {
   const router = useRouter();
@@ -26,12 +27,38 @@ export default function AuthForm() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   // Surfaces the "check your inbox" UI when sign-up succeeds but email
-  // confirmation is enabled on the Supabase project.
+  // confirmation is enabled, OR when a password-reset email is sent.
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [pendingPurpose, setPendingPurpose] = useState<"confirm" | "reset">("confirm");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (busy) return;
+
+    // ----- Forgot password -----
+    if (mode === "reset") {
+      if (!email) {
+        toast.error("Enter your email so we can send a reset link.");
+        return;
+      }
+      setBusy(true);
+      try {
+        const supabase = createClient();
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/auth/reset`,
+        });
+        if (error) throw error;
+        setPendingEmail(email);
+        setPendingPurpose("reset");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Couldn't send reset email.");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    // ----- Sign-up / Sign-in -----
     if (!email || !password || (mode === "signup" && !name)) {
       toast.error("Please fill in all fields.");
       return;
@@ -52,6 +79,7 @@ export default function AuthForm() {
         if (!data.session) {
           // Email confirmation flow — session is null until they click the link
           setPendingEmail(email);
+          setPendingPurpose("confirm");
         } else {
           toast.success("Account created. Welcome to Sarthi!");
           router.push("/");
@@ -74,31 +102,32 @@ export default function AuthForm() {
     }
   }
 
-  async function handleOAuth(provider: "google" | "apple") {
+  async function handleGoogle() {
     if (busy) return;
     setBusy(true);
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
-      provider,
+      provider: "google",
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
       },
     });
     if (error) {
       setBusy(false);
-      // Most common cause: the provider isn't enabled in the Supabase project
-      // yet. Surfacing the actual message helps debug.
+      // Most common cause: Google provider isn't enabled in the Supabase
+      // project. Surface the actual error to help debug.
       toast.error(
         error.message ??
-          `${provider} sign-in isn't configured yet — enable it in Supabase Auth settings.`
+          "Google sign-in isn't configured yet — enable it in Supabase Auth settings."
       );
     }
-    // On success: the browser is redirected to the provider, so no further
-    // work here. After the user returns, /auth/callback completes the flow.
+    // On success: browser is redirected to Google. After they return,
+    // /auth/callback completes the flow + auth state propagates.
   }
 
   // ---------- "Check your email" state ----------
   if (pendingEmail) {
+    const isReset = pendingPurpose === "reset";
     return (
       <div className="w-full max-w-md mx-auto">
         <Link
@@ -121,9 +150,19 @@ export default function AuthForm() {
             Check your inbox
           </h1>
           <p className="mt-2 text-gray-600 text-sm leading-relaxed">
-            We sent a confirmation link to{" "}
-            <strong className="text-gray-900">{pendingEmail}</strong>. Click it
-            to finish creating your Sarthi account.
+            {isReset ? (
+              <>
+                We sent a password-reset link to{" "}
+                <strong className="text-gray-900">{pendingEmail}</strong>. Click
+                it to set a new password.
+              </>
+            ) : (
+              <>
+                We sent a confirmation link to{" "}
+                <strong className="text-gray-900">{pendingEmail}</strong>. Click
+                it to finish creating your Sarthi account.
+              </>
+            )}
           </p>
           <button
             type="button"
@@ -156,45 +195,47 @@ export default function AuthForm() {
       </Link>
 
       <h1 className="mt-8 text-3xl md:text-4xl font-bold tracking-tight text-gray-900">
-        {mode === "login" ? "Welcome back" : "Create your account"}
+        {mode === "login"
+          ? "Welcome back"
+          : mode === "signup"
+            ? "Create your account"
+            : "Reset your password"}
       </h1>
       <p className="mt-2 text-gray-500">
         {mode === "login"
           ? "Sign in to access your saved itineraries and budgets."
-          : "Save itineraries across devices and unlock the budget tracker."}
+          : mode === "signup"
+            ? "Save itineraries across devices and unlock the budget tracker."
+            : "Enter your email and we'll send you a link to set a new password."}
       </p>
 
-      {/* OAuth */}
-      <div className="mt-6 space-y-2">
-        <button
-          type="button"
-          onClick={() => handleOAuth("google")}
-          disabled={busy}
-          className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-2xl border-2 border-gray-200 bg-white text-sm font-semibold text-gray-800 hover:border-gray-300 transition-colors disabled:opacity-50"
-        >
-          <GoogleLogo />
-          Continue with Google
-        </button>
-        <button
-          type="button"
-          onClick={() => handleOAuth("apple")}
-          disabled={busy}
-          className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-2xl border-2 border-gray-200 bg-white text-sm font-semibold text-gray-800 hover:border-gray-300 transition-colors disabled:opacity-50"
-        >
-          <AppleLogo />
-          Continue with Apple
-        </button>
-      </div>
+      {/* OAuth (hidden on the reset screen — no need to log in via Google to
+          reset your own password) */}
+      {mode !== "reset" && (
+        <>
+          <div className="mt-6 space-y-2">
+            <button
+              type="button"
+              onClick={handleGoogle}
+              disabled={busy}
+              className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-2xl border-2 border-gray-200 bg-white text-sm font-semibold text-gray-800 hover:border-gray-300 transition-colors disabled:opacity-50"
+            >
+              <GoogleLogo />
+              Continue with Google
+            </button>
+          </div>
 
-      <div className="my-6 flex items-center gap-3">
-        <span className="flex-1 h-px bg-gray-200" />
-        <span className="text-xs text-gray-400 font-semibold tracking-widest uppercase">
-          or
-        </span>
-        <span className="flex-1 h-px bg-gray-200" />
-      </div>
+          <div className="my-6 flex items-center gap-3">
+            <span className="flex-1 h-px bg-gray-200" />
+            <span className="text-xs text-gray-400 font-semibold tracking-widest uppercase">
+              or
+            </span>
+            <span className="flex-1 h-px bg-gray-200" />
+          </div>
+        </>
+      )}
 
-      {/* Email/password */}
+      {/* Email/password (and email-only for reset) */}
       <form onSubmit={handleSubmit} className="space-y-3">
         {mode === "signup" && (
           <Field
@@ -214,14 +255,32 @@ export default function AuthForm() {
           placeholder="you@example.com"
           autoComplete="email"
         />
-        <Field
-          label="Password"
-          type="password"
-          value={password}
-          onChange={setPassword}
-          placeholder="At least 6 characters"
-          autoComplete={mode === "signup" ? "new-password" : "current-password"}
-        />
+        {mode !== "reset" && (
+          <Field
+            label="Password"
+            type="password"
+            value={password}
+            onChange={setPassword}
+            placeholder="At least 6 characters"
+            autoComplete={mode === "signup" ? "new-password" : "current-password"}
+          />
+        )}
+
+        {/* Forgot password link — only visible in login mode */}
+        {mode === "login" && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setMode("reset");
+                setPassword("");
+              }}
+              className="text-xs font-semibold text-green-700 hover:text-green-800 underline underline-offset-2"
+            >
+              Forgot password?
+            </button>
+          </div>
+        )}
 
         <button
           type="submit"
@@ -231,23 +290,45 @@ export default function AuthForm() {
           {busy
             ? mode === "login"
               ? "Signing in…"
-              : "Creating…"
+              : mode === "signup"
+                ? "Creating…"
+                : "Sending…"
             : mode === "login"
               ? "Sign in"
-              : "Create account"}
+              : mode === "signup"
+                ? "Create account"
+                : "Send reset link"}
           {!busy && <ArrowRightIcon size={16} />}
         </button>
       </form>
 
       <p className="mt-5 text-sm text-gray-600 text-center">
-        {mode === "login" ? "New to Sarthi? " : "Already have an account? "}
-        <button
-          type="button"
-          onClick={() => setMode(mode === "login" ? "signup" : "login")}
-          className="font-semibold text-green-700 hover:text-green-800 underline underline-offset-2"
-        >
-          {mode === "login" ? "Create an account" : "Sign in"}
-        </button>
+        {mode === "reset" ? (
+          <>
+            Remembered it?{" "}
+            <button
+              type="button"
+              onClick={() => {
+                setMode("login");
+                setPassword("");
+              }}
+              className="font-semibold text-green-700 hover:text-green-800 underline underline-offset-2"
+            >
+              Back to sign-in
+            </button>
+          </>
+        ) : (
+          <>
+            {mode === "login" ? "New to Sarthi? " : "Already have an account? "}
+            <button
+              type="button"
+              onClick={() => setMode(mode === "login" ? "signup" : "login")}
+              className="font-semibold text-green-700 hover:text-green-800 underline underline-offset-2"
+            >
+              {mode === "login" ? "Create an account" : "Sign in"}
+            </button>
+          </>
+        )}
       </p>
     </div>
   );
@@ -304,14 +385,6 @@ function GoogleLogo() {
         fill="#EA4335"
         d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"
       />
-    </svg>
-  );
-}
-
-function AppleLogo() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden fill="currentColor">
-      <path d="M16.365 1.43c0 1.14-.46 2.27-1.22 3.09-.81.88-2.13 1.55-3.21 1.47-.13-1.1.43-2.27 1.18-3.04.81-.84 2.18-1.46 3.25-1.52zM20.74 17.5c-.6 1.34-.89 1.94-1.67 3.13-1.08 1.66-2.6 3.73-4.49 3.75-1.68.02-2.11-1.09-4.39-1.08-2.28.01-2.76 1.1-4.44 1.08-1.89-.02-3.34-1.88-4.42-3.54-3-4.65-3.32-10.11-1.47-13.02 1.32-2.07 3.41-3.28 5.37-3.28 2 0 3.26 1.1 4.92 1.1 1.6 0 2.58-1.1 4.9-1.1 1.75 0 3.6.95 4.92 2.6-4.34 2.38-3.64 8.61.78 11.36z" />
     </svg>
   );
 }

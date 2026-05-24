@@ -20,12 +20,15 @@ const PRODUCT_LINKS = [
   { href: "/budget", label: "Budget Planner" },
 ];
 
+// COMPANY_LINKS retained for when the Company column comes back. Keep the
+// `void` reference below so the strict build doesn't flag it as unused.
 const COMPANY_LINKS = [
   { href: "/about", label: "About Sarthi" },
   { href: "/blog", label: "Blog" },
   { href: "/faq", label: "FAQ" },
   // { href: "/contact", label: "Contact" },  // Hidden — contact page is disabled
 ];
+void COMPANY_LINKS;
 
 const SOCIAL_LINKS = [
   { href: "https://x.com/ParthVashisht7", label: "X (Twitter)", Icon: XLogoIcon },
@@ -40,7 +43,7 @@ export default function Footer() {
       <div className="max-w-7xl mx-auto px-4 md:px-8 py-14">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-10">
           {/* Brand block */}
-          <div className="md:col-span-5">
+          <div className="md:col-span-6">
             <Link
               href="/"
               className="inline-flex items-center gap-2.5 group focus-ring rounded-lg -mx-1 px-1 py-1"
@@ -63,7 +66,10 @@ export default function Footer() {
             </p>
           </div>
 
-          {/* Product */}
+          {/* Product — sits to the immediate left of Connect on the right
+              half of the grid (Brand=6, Product=3, Connect=3 = 12 cols).
+              Both clusters share the right edge so the eye reads Product →
+              Connect naturally. */}
           <div className="md:col-span-3">
             <h3 className="text-xs font-semibold tracking-widest text-forest-300 uppercase">
               Product
@@ -82,7 +88,8 @@ export default function Footer() {
             </ul>
           </div>
 
-          {/* Company */}
+          {/* Company section hidden — remove the comment markers below to
+              bring About / Blog / FAQ back into the footer.
           <div className="md:col-span-2">
             <h3 className="text-xs font-semibold tracking-widest text-forest-300 uppercase">
               Company
@@ -100,9 +107,10 @@ export default function Footer() {
               ))}
             </ul>
           </div>
+          */}
 
           {/* Connect */}
-          <div className="md:col-span-2">
+          <div className="md:col-span-3">
             <h3 className="text-xs font-semibold tracking-widest text-forest-300 uppercase">
               Connect
             </h3>
@@ -125,7 +133,7 @@ export default function Footer() {
               className="mt-4 inline-flex items-center gap-2 text-sm text-forest-200 hover:text-white transition-colors"
             >
               <MailIcon size={16} />
-              sarthiai18@gmail.co
+              <span className="truncate">sarthiai18@gmail.com</span>
             </a>
           </div>
         </div>

@@ -145,12 +145,28 @@ function assembleBudget(
 // Writes
 // ---------------------------------------------------------------------------
 
+// Default split of a trip's total budget across the 6 categories. Sums to
+// 100. Used when we auto-create a budget from an itinerary and want each
+// category to have a sensible planned amount instead of 0.
+const DEFAULT_PLANNED_SPLIT: Record<string, number> = {
+  flights:    0.30,
+  hotels:     0.30,
+  food:       0.15,
+  transport:  0.10,
+  activities: 0.10,
+  misc:       0.05,
+};
+
 export async function createBudget(opts: {
   userId: string;
   name: string;
   itineraryId?: string | null;
   tripDates?: string | null;
   tripImage?: string | null;
+  /** Total planned amount for the whole trip (in INR). When provided, the
+      default categories get pre-populated using DEFAULT_PLANNED_SPLIT so the
+      Budget page opens with the itinerary's actual numbers instead of 0. */
+  totalPlanned?: number;
 }): Promise<{ id: string }> {
   const sb = createServerClient();
   const { data, error } = await sb
@@ -166,13 +182,18 @@ export async function createBudget(opts: {
     .single();
   if (error) throw new Error(`Create budget failed: ${error.message}`);
 
-  // Seed default categories so the user has somewhere to put expenses
+  const total = Math.max(0, Math.round(opts.totalPlanned ?? 0));
+
+  // Seed default categories. If a totalPlanned was passed, split it across
+  // the 6 categories using DEFAULT_PLANNED_SPLIT.
   const catRows = DEFAULT_CATEGORIES.map((c, i) => ({
     budget_id: data.id,
     id: c.id,
     label: c.label,
     icon: c.icon,
-    planned: 0,
+    planned: total > 0
+      ? Math.round(total * (DEFAULT_PLANNED_SPLIT[c.id] ?? 0))
+      : 0,
     spent: 0,
     display_order: i,
   }));

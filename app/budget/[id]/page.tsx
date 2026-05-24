@@ -58,6 +58,9 @@ export default async function BudgetDetailPage({ params }: Props) {
             name: itinerary.title,
             itineraryId: itinerary.id,
             tripImage: itinerary.image,
+            // Carry the trip's planned total over so the budget page opens
+            // with real numbers split across categories instead of all 0s.
+            totalPlanned: itinerary.total_budget ?? 0,
           });
           // Re-fetch and render — same code path as a fresh "GET budget by
           // itinerary id" call would have served on a second visit.

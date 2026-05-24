@@ -11,16 +11,16 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/useAuth";
 import { usePreferences, type DietaryPreference, type HotelTier } from "@/lib/usePreferences";
 import {
-  MOCK_ITINERARIES,
   MOCK_GROUP_TYPES,
   MOCK_DEPARTURE_CITIES,
   formatINR,
   formatINRCompact,
   type GroupType,
+  type Itinerary,
 } from "@/lib/mockData";
 import { toast } from "@/lib/toast";
 import {
@@ -37,6 +37,20 @@ import {
 import ItineraryCard from "@/components/cards/ItineraryCard";
 
 const MEMBER_SINCE = "April 2025"; // mock — would come from auth.created_at in real life
+
+interface ProfileStats {
+  trips: number;
+  placesVisited: number;
+  totalBudget: number;
+  favouriteGroup: GroupType | null;
+}
+
+const EMPTY_STATS: ProfileStats = {
+  trips: 0,
+  placesVisited: 0,
+  totalBudget: 0,
+  favouriteGroup: null,
+};
 
 const HOTEL_TIERS: { id: HotelTier; label: string; icon: string }[] = [
   { id: "budget", label: "Budget", icon: "🎒" },
@@ -58,45 +72,39 @@ export default function ProfileView() {
   const { user, updateProfile, signOut, hydrated } = useAuth();
   const { prefs, update: updatePrefs, clear: clearPrefs } = usePreferences();
 
-  // Compute travel stats from the mock itinerary set. In a real backend
-  // these would be filtered by user_id.
-  const stats = useMemo(() => {
-    const trips = MOCK_ITINERARIES.length;
-    const states = new Set(
-      MOCK_ITINERARIES.flatMap((it) =>
-        it.state.split(/[·,]/).map((s) => s.trim())
-      )
-    );
-    const totalBudget = MOCK_ITINERARIES.reduce(
-      (s, it) => s + it.totalBudget,
-      0
-    );
-    const groupCounts = MOCK_ITINERARIES.reduce(
-      (acc, it) => {
-        acc[it.groupType] = (acc[it.groupType] || 0) + 1;
-        return acc;
-      },
-      {} as Record<string, number>
-    );
-    const favouriteGroup =
-      (Object.entries(groupCounts).sort((a, b) => b[1] - a[1])[0]?.[0] as
-        | GroupType
-        | undefined) ?? "family";
-    return {
-      trips,
-      placesVisited: states.size,
-      totalBudget,
-      favouriteGroup,
-    };
-  }, []);
+  // Real travel stats + recent trips, fetched from the signed-in user's
+  // own itineraries. Filtered server-side by user_id. Empty for guests.
+  const [stats, setStats] = useState<ProfileStats>(EMPTY_STATS);
+  const [recentTrips, setRecentTrips] = useState<Itinerary[]>([]);
 
-  const recentTrips = useMemo(
-    () =>
-      [...MOCK_ITINERARIES]
-        .sort((a, b) => b.savedAt.localeCompare(a.savedAt))
-        .slice(0, 3),
-    []
-  );
+  useEffect(() => {
+    if (!hydrated || !user) {
+      setStats(EMPTY_STATS);
+      setRecentTrips([]);
+      return;
+    }
+    let cancelled = false;
+    Promise.all([
+      fetch("/api/profile/stats", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : EMPTY_STATS))
+        .catch(() => EMPTY_STATS),
+      fetch("/api/profile/recent-trips?limit=3", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : { itineraries: [] }))
+        .catch(() => ({ itineraries: [] })),
+    ]).then(([s, recent]) => {
+      if (cancelled) return;
+      setStats({
+        trips: Number(s.trips ?? 0),
+        placesVisited: Number(s.placesVisited ?? 0),
+        totalBudget: Number(s.totalBudget ?? 0),
+        favouriteGroup: (s.favouriteGroup ?? null) as GroupType | null,
+      });
+      setRecentTrips(
+        Array.isArray(recent.itineraries) ? (recent.itineraries as Itinerary[]) : []
+      );
+    });
+    return () => { cancelled = true; };
+  }, [hydrated, user]);
 
   if (!hydrated) {
     return <ProfileSkeleton />;
@@ -325,16 +333,38 @@ export default function ProfileView() {
               <ArrowRightIcon size={14} />
             </Link>
           </div>
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-4">
-            {recentTrips.map((it) => (
-              <ItineraryCard
-                key={it.id}
-                itinerary={it}
-                variant="grid"
-                showFromBadge={false}
-              />
-            ))}
-          </div>
+          {recentTrips.length > 0 ? (
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-4">
+              {recentTrips.map((it) => (
+                <ItineraryCard
+                  key={it.id}
+                  itinerary={it}
+                  variant="grid"
+                  showFromBadge={false}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="mt-3 rounded-2xl border border-dashed border-gray-200 bg-white p-8 text-center">
+              <p className="text-sm text-gray-500">
+                No trips yet. Head to{" "}
+                <Link
+                  href="/generate"
+                  className="font-semibold text-green-700 hover:text-green-800 underline underline-offset-2"
+                >
+                  Generate
+                </Link>{" "}
+                or save a ready-made one from the{" "}
+                <Link
+                  href="/"
+                  className="font-semibold text-green-700 hover:text-green-800 underline underline-offset-2"
+                >
+                  homepage
+                </Link>
+                .
+              </p>
+            </div>
+          )}
         </section>
 
         {/* Danger zone */}
@@ -376,15 +406,16 @@ function ProfileHeader({
 }: {
   user: { name: string; email: string; avatar?: string };
   memberSince: string;
-  favouriteGroup: GroupType;
+  favouriteGroup: GroupType | null;
   onSave: (patch: { avatar?: string }) => void;
 }) {
   const [editingAvatar, setEditingAvatar] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState(user.avatar ?? "");
 
   const initial = (user.name || user.email || "S").charAt(0).toUpperCase();
-  const groupLabel =
-    MOCK_GROUP_TYPES.find((g) => g.id === favouriteGroup)?.label ?? "Traveller";
+  const groupLabel = favouriteGroup
+    ? MOCK_GROUP_TYPES.find((g) => g.id === favouriteGroup)?.label ?? "Traveller"
+    : "Traveller";
 
   return (
     <header className="relative bg-gradient-to-br from-forest-950 via-forest-900 to-green-700 text-white">

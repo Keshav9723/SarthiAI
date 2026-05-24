@@ -10,6 +10,8 @@ const nextConfig = {
       // Wikimedia (when we use scraped destination thumbnails later)
       { protocol: "https", hostname: "upload.wikimedia.org" },
       { protocol: "https", hostname: "commons.wikimedia.org" },
+      // Google account avatars — populated when a user signs in with Google
+      { protocol: "https", hostname: "lh3.googleusercontent.com" },
     ],
   },
 };
