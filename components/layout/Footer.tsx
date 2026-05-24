@@ -6,7 +6,7 @@ import Link from "next/link";
 import {
   CompassIcon,
   InstagramIcon,
-  TwitterIcon,
+  XLogoIcon,
   FacebookIcon,
   YoutubeIcon,
   MailIcon,
@@ -28,7 +28,7 @@ const COMPANY_LINKS = [
 ];
 
 const SOCIAL_LINKS = [
-  { href: "https://twitter.com", label: "Twitter", Icon: TwitterIcon },
+  { href: "https://x.com/ParthVashisht7", label: "X (Twitter)", Icon: XLogoIcon },
   { href: "https://www.instagram.com/keshavtanwar20/", label: "Instagram", Icon: InstagramIcon },
   { href: "https://facebook.com", label: "Facebook", Icon: FacebookIcon },
   { href: "https://www.youtube.com/@fragger9723", label: "YouTube", Icon: YoutubeIcon },
@@ -130,6 +130,8 @@ export default function Footer() {
           </div>
         </div>
 
+        {/* Bottom legal strip — hidden for now per design feedback.
+            Uncomment when copyright + legal links are needed again.
         <div className="mt-12 pt-6 border-t border-white/10 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
           <p className="text-xs text-forest-300">
             © {new Date().getFullYear()} Sarthi Travel Labs · A NorthCap
@@ -147,6 +149,7 @@ export default function Footer() {
             </Link>
           </div>
         </div>
+        */}
       </div>
     </footer>
   );

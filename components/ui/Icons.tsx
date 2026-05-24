@@ -305,13 +305,30 @@ export function CarIcon(props: IconProps) {
   );
 }
 
-export function TwitterIcon(props: IconProps) {
+// X (formerly Twitter) — uses the post-rebrand glyph: a stylized italic "X"
+// rendered from a filled SVG path. The official X brand spec uses a
+// fill-based glyph (not strokes), so we override the base()'s default
+// stroke / fill values here. Path data sourced from the X.com favicon.
+export function XLogoIcon(props: IconProps) {
+  const { size = 20, ...rest } = props;
   return (
-    <svg {...base(props)}>
-      <path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z" />
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      stroke="none"
+      aria-hidden
+      {...rest}
+    >
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
     </svg>
   );
 }
+
+// Backwards-compat alias — older imports still say `TwitterIcon`. Re-exports
+// the new glyph so nothing breaks while call sites update at their own pace.
+export const TwitterIcon = XLogoIcon;
 
 export function InstagramIcon(props: IconProps) {
   return (

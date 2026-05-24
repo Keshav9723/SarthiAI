@@ -4,7 +4,7 @@ import Link from "next/link";
 import ContactForm from "@/components/contact/ContactForm";
 import {
   MailIcon,
-  TwitterIcon,
+  XLogoIcon,
   InstagramIcon,
   CompassIcon,
 } from "@/components/ui/Icons";
@@ -22,10 +22,10 @@ const CHANNELS = [
     href: "mailto:sarthiai18@gmail.com",
   },
   {
-    icon: TwitterIcon,
-    label: "On Twitter",
+    icon: XLogoIcon,
+    label: "On X",
     value: "@sarthi_travel",
-    href: "https://twitter.com",
+    href: "https://x.com/ParthVashisht7",
   },
   {
     icon: InstagramIcon,
