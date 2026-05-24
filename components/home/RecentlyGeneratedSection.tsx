@@ -1,14 +1,22 @@
 // components/home/RecentlyGeneratedSection.tsx
-// Section 2 — live feed of itineraries other travellers have generated.
+// Section 2 — live feed of itineraries. Server-fetched from Supabase using
+// template itineraries (which are the curated "ready-to-view" trips). When
+// real user-generated trips are made public in the future, this rail will
+// pick them up too.
 
 import HorizontalRail from "./HorizontalRail";
 import ItineraryCard from "@/components/cards/ItineraryCard";
-import {
-  MOCK_RECENT_GENERATIONS,
-  getItineraryById,
-} from "@/lib/mockData";
+import { listTemplateItineraries, rowToUiItinerary } from "@/lib/queries/itineraries";
 
-export default function RecentlyGeneratedSection() {
+// Plausible "posted N ago" cycle — purely cosmetic. Templates don't have a
+// real "posted" timestamp; this just makes the rail feel alive.
+const POSTED_AGO_CYCLE = ["2h ago", "5h ago", "12h ago", "1d ago", "1d ago", "2d ago"];
+const FROM_CITIES = ["Mumbai", "Delhi", "Bangalore", "Pune", "Hyderabad", "Chennai"];
+
+export default async function RecentlyGeneratedSection() {
+  const rows = await listTemplateItineraries(8);
+  if (rows.length === 0) return null;
+
   return (
     <section className="py-16 px-4 md:px-8 max-w-7xl mx-auto">
       <div className="flex items-end justify-between gap-4 mb-6">
@@ -30,16 +38,16 @@ export default function RecentlyGeneratedSection() {
       </div>
 
       <HorizontalRail>
-        {MOCK_RECENT_GENERATIONS.map((rg) => {
-          const it = getItineraryById(rg.itineraryId);
-          if (!it) return null;
-          // Layer the rail metadata on top of the base itinerary so each card
-          // shows its own "From X · Y ago" line.
-          const merged = { ...it, fromCity: rg.fromCity, postedAgo: rg.postedAgo };
+        {rows.map((r, i) => {
+          const it = rowToUiItinerary(r);
+          // Layer cosmetic "from X · Y ago" so each card looks distinct
+          const merged = {
+            ...it,
+            fromCity: it.fromCity || FROM_CITIES[i % FROM_CITIES.length],
+            postedAgo: it.postedAgo || POSTED_AGO_CYCLE[i % POSTED_AGO_CYCLE.length],
+          };
           return (
-            // h-full + the card's internal h-full keep every tile in the
-            // rail the same height even when highlights wrap differently.
-            <div key={rg.id} className="snap-start h-full">
+            <div key={r.id} className="snap-start h-full">
               <ItineraryCard itinerary={merged} />
             </div>
           );

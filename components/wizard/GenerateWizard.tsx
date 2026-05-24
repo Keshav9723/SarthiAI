@@ -27,9 +27,10 @@ import {
 } from "@/components/ui/Icons";
 import DateRangePicker from "@/components/ui/DateRangePicker";
 import { useWizardDraft } from "@/lib/useWizardDraft";
+import { usePreferences } from "@/lib/usePreferences";
 import ResumePrompt from "./ResumePrompt";
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 5;
 const DRAFT_KEY = "sarthi_generate_draft";
 
 interface FormState {
@@ -76,24 +77,61 @@ export default function GenerateWizard() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const { draft, save, clear, hydrated } = useWizardDraft<FormState>(DRAFT_KEY);
+  const { prefs, hydrated: prefsHydrated } = usePreferences();
   const [resumeDismissed, setResumeDismissed] = useState(false);
 
-  // Pre-fill destination if homepage / packages page handed one over.
+  // Pre-fill from query params — used both by homepage cards (destination
+  // only) and by the Surprise Me result CTAs (everything except fromCity).
+  // Also pre-fill fromCity from saved user preferences (home city) so signed-
+  // in users don't have to type their origin every time. Query param wins
+  // over preference when both are present.
   useEffect(() => {
     const destination = search.get("destination");
-    if (destination) {
-      setForm((f) => ({ ...f, destinations: [destination] }));
-    }
+    const group = search.get("group") as GroupType | null;
+    const groupSize = Number(search.get("groupSize") || 0);
+    const fromCityParam = search.get("fromCity") || "";
+    const budget = Number(search.get("budget") || 0);
+    const budgetTier = search.get("budgetTier") as FormState["budgetTier"];
+    const startDate = search.get("startDate") || "";
+    const endDate = search.get("endDate") || "";
+
+    setForm((f) => {
+      const next: FormState = { ...f };
+      if (destination && !next.destinations.includes(destination)) {
+        next.destinations = [destination];
+      }
+      if (group && ["couple", "family", "friends", "solo"].includes(group)) {
+        next.group = group;
+      }
+      if (groupSize > 0) next.groupSize = groupSize;
+      if (fromCityParam) next.fromCity = fromCityParam;
+      if (budget >= 5000) next.budget = budget;
+      if (budgetTier) next.budgetTier = budgetTier;
+      if (startDate) next.startDate = startDate;
+      if (endDate) next.endDate = endDate;
+      return next;
+    });
   }, [search]);
 
-  // Pre-select the homepage group selection if there is one.
+  // Pre-fill fromCity from saved home city preference (only if not already
+  // set by query params and not already user-entered). The user can still
+  // change it on the From step — we just give them a head-start.
   useEffect(() => {
+    if (!prefsHydrated) return;
+    if (!prefs.fromCity) return;
+    setForm((f) => (f.fromCity ? f : { ...f, fromCity: prefs.fromCity ?? "" }));
+  }, [prefsHydrated, prefs.fromCity]);
+
+  // Pre-select the homepage group selection if there is one (only when not
+  // already provided via search params).
+  useEffect(() => {
+    if (search.get("group")) return;
     const stored =
       typeof window !== "undefined"
         ? (window.localStorage.getItem("sarthi_group_type") as GroupType | null)
         : null;
     if (stored) setForm((f) => ({ ...f, group: stored }));
-  }, []);
+  }, [search]);
 
   // Auto-save the form on every change once we've hydrated. We don't save
   // before hydration finishes, because that would overwrite a real draft
@@ -121,25 +159,80 @@ export default function GenerateWizard() {
   const canGoNext = useMemo(() => {
     switch (step) {
       case 1:
-        return !!form.fromCity;
+        return !!form.fromCity && form.destinations.length > 0;
       case 2:
-        return form.destinations.length > 0;
-      case 3:
         return !!form.group && form.groupSize > 0;
-      case 4:
+      case 3:
         return form.budget >= 5000;
-      case 5:
+      case 4:
         return true; // dates are optional
-      case 6:
+      case 5:
         return true; // preferences are optional
       default:
         return true;
     }
   }, [step, form]);
 
+  // When the user lands here from Surprise Me (`?from=surprise`), they've
+  // already picked everything in that wizard — group, budget, dates,
+  // preferences — so we trust those values even when an individual sub-field
+  // is empty (e.g. budgetTier might be null but budget is set).
+  const fromSurprise = search.get("from") === "surprise";
+
+  // A step is "already filled" when its collected fields are set. Skipped
+  // steps disappear from the next() / back() navigation. In surprise-flow
+  // mode we relax the checks so user only has to provide the origin city.
+  const isStepFilled = useMemo(() => {
+    return (s: number): boolean => {
+      switch (s) {
+        case 1: return !!form.fromCity && form.destinations.length > 0;
+        case 2:
+          // Group — surprise sets group + groupSize, skip whenever either holds.
+          if (fromSurprise && (form.group || form.groupSize > 1)) return true;
+          return !!form.group && form.groupSize > 0;
+        case 3:
+          // Budget — surprise sets budget but not always budgetTier.
+          if (fromSurprise && form.budget >= 5000) return true;
+          return form.budget >= 5000 && !!form.budgetTier;
+        case 4:
+          // Dates — surprise users may have submitted without dates; treat
+          // missing dates as "skip" too when they came from surprise.
+          if (fromSurprise) return true;
+          return !!form.startDate && !!form.endDate;
+        case 5: return false; // preferences always optional — never auto-skip
+        default: return false;
+      }
+    };
+  }, [form, fromSurprise]);
+
+  function findNextStep(from: number): number {
+    let s = from + 1;
+    while (s < TOTAL_STEPS && isStepFilled(s)) s += 1;
+    return Math.min(s, TOTAL_STEPS);
+  }
+
+  function findPrevStep(from: number): number {
+    let s = from - 1;
+    while (s > 1 && isStepFilled(s)) s -= 1;
+    return Math.max(s, 1);
+  }
+
+  // Compute the "effective" progress bar values — i.e. how many steps the
+  // user will actually see (skipped steps don't count). Each non-skipped step
+  // gets an ordinal number starting from 1.
+  const visibleSteps = useMemo(() => {
+    const list: number[] = [];
+    for (let s = 1; s <= TOTAL_STEPS; s++) {
+      if (s === step || !isStepFilled(s)) list.push(s);
+    }
+    return list;
+  }, [step, isStepFilled]);
+  const effectiveStep = Math.max(1, visibleSteps.indexOf(step) + 1);
+  const effectiveTotal = visibleSteps.length;
+
   async function next() {
     if (step < TOTAL_STEPS) {
-      setStep((s) => s + 1);
+      setStep(findNextStep(step));
       return;
     }
 
@@ -197,7 +290,7 @@ export default function GenerateWizard() {
   }
 
   function back() {
-    setStep((s) => Math.max(1, s - 1));
+    setStep((s) => findPrevStep(s));
   }
 
   if (submitting) {
@@ -218,10 +311,10 @@ export default function GenerateWizard() {
 
   return (
     <WizardShell
-      step={step}
-      totalSteps={TOTAL_STEPS}
-      title={titleFor(step)}
-      subtitle={subtitleFor(step)}
+      step={effectiveStep}
+      totalSteps={effectiveTotal}
+      title={titleForWithContext(step, form)}
+      subtitle={subtitleForWithContext(step, form)}
       canGoNext={canGoNext}
       nextLabel={step === TOTAL_STEPS ? "Generate Itinerary" : "Next"}
       onBack={back}
@@ -242,12 +335,11 @@ export default function GenerateWizard() {
           {submitError}
         </div>
       )}
-      {step === 1 && <StepDeparture form={form} setForm={setForm} />}
-      {step === 2 && <StepDestinations form={form} setForm={setForm} />}
-      {step === 3 && <StepGroup form={form} setForm={setForm} />}
-      {step === 4 && <StepBudget form={form} setForm={setForm} />}
-      {step === 5 && <StepDates form={form} setForm={setForm} />}
-      {step === 6 && <StepPreferences form={form} setForm={setForm} />}
+      {step === 1 && <StepFromTo form={form} setForm={setForm} />}
+      {step === 2 && <StepGroup form={form} setForm={setForm} />}
+      {step === 3 && <StepBudget form={form} setForm={setForm} />}
+      {step === 4 && <StepDates form={form} setForm={setForm} />}
+      {step === 5 && <StepPreferences form={form} setForm={setForm} />}
     </WizardShell>
   );
 }
@@ -269,8 +361,7 @@ function capitalize(s: string) {
 
 function titleFor(step: number) {
   return [
-    "Where are you starting from?",
-    "Where do you want to go?",
+    "Where to and where from?",
     "Who's coming along?",
     "What's your budget?",
     "When are you travelling?",
@@ -280,8 +371,7 @@ function titleFor(step: number) {
 
 function subtitleFor(step: number) {
   return [
-    "We'll use this to find the best flights for you.",
-    "Pick one — or toggle multi-city to chain a few.",
+    "Your departure city helps us find flights and trains. Pick one destination — or toggle multi-city to chain a few.",
     "We'll tune pacing and recommendations to your group.",
     "Per traveller, all-in — flights, hotels, food, activities.",
     "Dates help us check real weather and flight prices — optional but recommended.",
@@ -289,84 +379,61 @@ function subtitleFor(step: number) {
   ][step - 1];
 }
 
-// ---------------------------------------------------------------------------
-// Step 1 — Departure
-// ---------------------------------------------------------------------------
+// When the user lands from Surprise Me with destination already set, soften
+// the wording so the only ask is the origin city.
+export function titleForWithContext(step: number, form: FormState): string {
+  if (step === 1 && form.destinations.length > 0 && !form.fromCity) {
+    return `Where are you starting from?`;
+  }
+  return titleFor(step);
+}
 
-function StepDeparture({
-  form,
-  setForm,
-}: {
-  form: FormState;
-  setForm: React.Dispatch<React.SetStateAction<FormState>>;
-}) {
-  const [query, setQuery] = useState("");
-  const filtered = MOCK_DEPARTURE_CITIES.filter((c) =>
-    c.city.toLowerCase().includes(query.toLowerCase())
-  );
-
-  return (
-    <div>
-      <div className="relative">
-        <SearchIcon
-          size={18}
-          className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-        />
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search your city…"
-          className="w-full pl-11 pr-4 py-3.5 text-base bg-white border border-gray-200 rounded-2xl focus:border-green-500 focus:ring-2 focus:ring-green-200 outline-none transition-all"
-        />
-      </div>
-      <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-        {filtered.map((c) => {
-          const selected = form.fromCity === c.city;
-          return (
-            <button
-              key={c.airportCode}
-              type="button"
-              onClick={() => setForm((f) => ({ ...f, fromCity: c.city }))}
-              aria-pressed={selected}
-              className={`p-4 rounded-2xl border-2 text-left transition-all focus-ring ${
-                selected
-                  ? "border-green-600 bg-green-50"
-                  : "border-gray-200 bg-white hover:border-gray-300"
-              }`}
-            >
-              <p className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase">
-                {c.airportCode}
-              </p>
-              <p className="mt-1 text-base font-semibold text-gray-900">
-                {c.city}
-              </p>
-              <p className="text-xs text-gray-500">{c.state}</p>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
+export function subtitleForWithContext(step: number, form: FormState): string {
+  if (step === 1 && form.destinations.length > 0 && !form.fromCity) {
+    return `We've got ${form.destinations[0]} locked in — just need your origin city for flight / train pricing.`;
+  }
+  return subtitleFor(step);
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 — Destinations
+// Step 1 — From + To (combined on a single page)
+// Two collapsible sections — when a value is picked, its panel collapses to a
+// summary chip so the other section gets more screen. Both still show together
+// when first opened, so the user understands they need to set both.
 // ---------------------------------------------------------------------------
 
-function StepDestinations({
+function StepFromTo({
   form,
   setForm,
 }: {
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
 }) {
-  const [query, setQuery] = useState("");
-  const filtered = MOCK_DESTINATIONS.filter((d) =>
-    d.name.toLowerCase().includes(query.toLowerCase())
+  const [fromQuery, setFromQuery] = useState("");
+  const [toQuery, setToQuery] = useState("");
+  // Each panel is collapsed when its value is already set, expanded otherwise.
+  // We use a "user toggled it open" flag rather than mirroring form state with
+  // useState — otherwise the panel stays open if the form value arrives
+  // asynchronously (e.g. after Surprise Me hands off via URL params, which
+  // run AFTER this component mounts).
+  const [forceFromOpen, setForceFromOpen] = useState(false);
+  const [forceToOpen, setForceToOpen] = useState(false);
+  const fromOpen = !form.fromCity || forceFromOpen;
+  const toOpen = form.destinations.length === 0 || forceToOpen;
+
+  const fromCities = MOCK_DEPARTURE_CITIES.filter((c) =>
+    c.city.toLowerCase().includes(fromQuery.toLowerCase())
+  );
+  const toDestinations = MOCK_DESTINATIONS.filter((d) =>
+    d.name.toLowerCase().includes(toQuery.toLowerCase())
   );
 
-  function toggle(name: string) {
+  function pickFrom(city: string) {
+    setForm((f) => ({ ...f, fromCity: city }));
+    setForceFromOpen(false); // collapse FROM after picking
+  }
+
+  function toggleTo(name: string) {
     setForm((f) => {
       const exists = f.destinations.includes(name);
       if (exists)
@@ -377,80 +444,210 @@ function StepDestinations({
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <div className="relative flex-1">
-          <SearchIcon
-            size={18}
-            className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-          />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search a destination…"
-            className="w-full pl-11 pr-4 py-3.5 bg-white border border-gray-200 rounded-2xl focus:border-green-500 focus:ring-2 focus:ring-green-200 outline-none"
-          />
-        </div>
-        <label className="flex items-center gap-2 text-sm font-medium text-gray-700 shrink-0">
-          <input
-            type="checkbox"
-            checked={form.multiCity}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, multiCity: e.target.checked }))
-            }
-            className="rounded text-green-600 focus:ring-green-500"
-          />
-          Multi-city
-        </label>
-      </div>
-
-      {form.destinations.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
-          {form.destinations.map((d) => (
-            <span
-              key={d}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-100 text-green-800 text-sm font-semibold"
+    <div className="space-y-5">
+      {/* ---------------- FROM ---------------- */}
+      <section className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+        <header className="flex items-center justify-between gap-3 px-5 py-4 bg-gray-50 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <span className="grid place-items-center w-7 h-7 rounded-full bg-saffron-100 text-saffron-700 text-xs font-bold">
+              A
+            </span>
+            <p className="text-xs font-semibold tracking-widest text-gray-600 uppercase">
+              From
+            </p>
+            {form.fromCity && (
+              <span className="ml-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-100 text-green-800 text-xs font-semibold">
+                <MapPinIcon size={12} />
+                {form.fromCity}
+              </span>
+            )}
+          </div>
+          {form.fromCity && (
+            <button
+              type="button"
+              onClick={() => setForceFromOpen((s) => !s)}
+              className="text-xs font-semibold text-green-700 hover:text-green-800"
             >
-              <MapPinIcon size={14} />
-              {d}
+              {fromOpen ? "Done" : "Change"}
+            </button>
+          )}
+        </header>
+        {fromOpen && (
+          <div className="p-5">
+            <div className="relative">
+              <SearchIcon
+                size={18}
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+              <input
+                type="text"
+                value={fromQuery}
+                onChange={(e) => setFromQuery(e.target.value)}
+                placeholder="Search your city…"
+                className="w-full pl-11 pr-4 py-3 text-sm bg-white border border-gray-200 rounded-xl focus:border-green-500 focus:ring-2 focus:ring-green-200 outline-none"
+              />
+            </div>
+            <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+              {fromCities.slice(0, 12).map((c) => {
+                const selected = form.fromCity === c.city;
+                return (
+                  <button
+                    key={c.airportCode}
+                    type="button"
+                    onClick={() => pickFrom(c.city)}
+                    aria-pressed={selected}
+                    className={`p-3 rounded-xl border-2 text-left transition-all focus-ring ${
+                      selected
+                        ? "border-green-600 bg-green-50"
+                        : "border-gray-200 bg-white hover:border-gray-300"
+                    }`}
+                  >
+                    <p className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase">
+                      {c.airportCode}
+                    </p>
+                    <p className="mt-0.5 text-sm font-semibold text-gray-900">
+                      {c.city}
+                    </p>
+                    <p className="text-[11px] text-gray-500">{c.state}</p>
+                  </button>
+                );
+              })}
+            </div>
+            {fromCities.length > 12 && (
+              <p className="mt-3 text-xs text-gray-500">
+                Type to filter — {fromCities.length} cities available.
+              </p>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* ---------------- TO ---------------- */}
+      <section className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+        <header className="flex items-center justify-between gap-3 px-5 py-4 bg-gray-50 border-b border-gray-100">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="grid place-items-center w-7 h-7 rounded-full bg-green-100 text-green-700 text-xs font-bold">
+              B
+            </span>
+            <p className="text-xs font-semibold tracking-widest text-gray-600 uppercase">
+              To
+            </p>
+            {form.destinations.length === 0 ? null : form.destinations.length === 1 ? (
+              <span className="ml-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-100 text-green-800 text-xs font-semibold">
+                <MapPinIcon size={12} />
+                {form.destinations[0]}
+              </span>
+            ) : (
+              <span className="ml-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-100 text-green-800 text-xs font-semibold">
+                {form.destinations.length} cities
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="hidden sm:flex items-center gap-1.5 text-xs font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={form.multiCity}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, multiCity: e.target.checked }))
+                }
+                className="rounded text-green-600 focus:ring-green-500"
+              />
+              Multi-city
+            </label>
+            {form.destinations.length > 0 && (
               <button
                 type="button"
-                onClick={() => toggle(d)}
-                className="ml-1 text-green-700 hover:text-green-900"
-                aria-label={`Remove ${d}`}
+                onClick={() => setForceToOpen((s) => !s)}
+                className="text-xs font-semibold text-green-700 hover:text-green-800"
               >
-                ×
+                {toOpen ? "Done" : "Change"}
               </button>
-            </span>
-          ))}
-        </div>
-      )}
+            )}
+          </div>
+        </header>
+        {toOpen && (
+          <div className="p-5">
+            <label className="sm:hidden mb-3 flex items-center gap-1.5 text-xs font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={form.multiCity}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, multiCity: e.target.checked }))
+                }
+                className="rounded text-green-600 focus:ring-green-500"
+              />
+              Multi-city trip
+            </label>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        {filtered.map((d) => {
-          const selected = form.destinations.includes(d.name);
-          return (
-            <button
-              key={d.id}
-              type="button"
-              onClick={() => toggle(d.name)}
-              aria-pressed={selected}
-              className={`p-4 rounded-2xl border-2 text-left transition-all focus-ring ${
-                selected
-                  ? "border-green-600 bg-green-50"
-                  : "border-gray-200 bg-white hover:border-gray-300"
-              }`}
-            >
-              <p className="text-base font-semibold text-gray-900">{d.name}</p>
-              <p className="text-xs text-gray-500">{d.tagline}</p>
-              <p className="mt-1 text-[10px] font-semibold tracking-widest text-gray-400 uppercase">
-                Best · {d.season}
+            {form.destinations.length > 1 && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                {form.destinations.map((d) => (
+                  <span
+                    key={d}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-100 text-green-800 text-xs font-semibold"
+                  >
+                    <MapPinIcon size={12} />
+                    {d}
+                    <button
+                      type="button"
+                      onClick={() => toggleTo(d)}
+                      className="ml-1 text-green-700 hover:text-green-900"
+                      aria-label={`Remove ${d}`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="relative">
+              <SearchIcon
+                size={18}
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+              <input
+                type="text"
+                value={toQuery}
+                onChange={(e) => setToQuery(e.target.value)}
+                placeholder="Search a destination…"
+                className="w-full pl-11 pr-4 py-3 text-sm bg-white border border-gray-200 rounded-xl focus:border-green-500 focus:ring-2 focus:ring-green-200 outline-none"
+              />
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-2.5">
+              {toDestinations.slice(0, 9).map((d) => {
+                const selected = form.destinations.includes(d.name);
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => toggleTo(d.name)}
+                    aria-pressed={selected}
+                    className={`p-3 rounded-xl border-2 text-left transition-all focus-ring ${
+                      selected
+                        ? "border-green-600 bg-green-50"
+                        : "border-gray-200 bg-white hover:border-gray-300"
+                    }`}
+                  >
+                    <p className="text-sm font-semibold text-gray-900">{d.name}</p>
+                    <p className="text-[11px] text-gray-500 line-clamp-1">{d.tagline}</p>
+                    <p className="mt-1 text-[10px] font-semibold tracking-widest text-gray-400 uppercase">
+                      Best · {d.season}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+            {toDestinations.length > 9 && (
+              <p className="mt-3 text-xs text-gray-500">
+                Type to filter — {toDestinations.length} destinations available.
               </p>
-            </button>
-          );
-        })}
-      </div>
+            )}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

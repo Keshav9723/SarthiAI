@@ -16,11 +16,9 @@ import {
   LogOutIcon,
   UserIcon,
   WalletIcon,
-  HeartIcon,
 } from "@/components/ui/Icons";
 import { useAuth } from "@/lib/useAuth";
 import { toast } from "@/lib/toast";
-import NotificationBell from "./NotificationBell";
 import SearchTrigger from "@/components/search/SearchTrigger";
 import ThemeToggle, { ThemeIconToggle } from "./ThemeToggle";
 
@@ -130,11 +128,6 @@ export default function Navbar() {
           <div className="hidden md:block">
             <SearchTrigger />
           </div>
-          {hydrated && user && (
-            <div className="hidden md:block">
-              <NotificationBell />
-            </div>
-          )}
           {/* Auth area — render a stable skeleton until hydrated to avoid SSR flash */}
           <div className="hidden md:block">
             {hydrated && user ? (
@@ -181,14 +174,6 @@ export default function Navbar() {
                     >
                       <CompassIcon size={16} className="text-gray-500" />
                       My Itineraries
-                    </Link>
-                    <Link
-                      href="/wishlist"
-                      className="flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-forest-800 transition-colors"
-                      role="menuitem"
-                    >
-                      <HeartIcon size={16} className="text-gray-500" />
-                      Wishlist
                     </Link>
                     <div className="my-1 h-px bg-gray-100 dark:bg-forest-800" />
                     <ThemeToggle />

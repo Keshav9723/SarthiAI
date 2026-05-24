@@ -122,12 +122,18 @@ async function trySearchAPI(
     returnDate?: string;
   }
 ): Promise<FlightQuote | null> {
+  // SearchAPI's google_flights engine REQUIRES a return_date even when
+  // searching one-way (the `type=2` param doesn't reliably suppress this).
+  // Default to outbound + 7 days when none provided so we never 400 on the
+  // user. The returned price distribution still reflects the route fairly.
+  const returnDate = opts.returnDate ?? defaultReturnDate(opts.date);
+
   const url = new URL(SEARCHAPI_HOST);
   url.searchParams.set("engine", "google_flights");
   url.searchParams.set("departure_id", originIata);
   url.searchParams.set("arrival_id", destIata);
   url.searchParams.set("outbound_date", opts.date);
-  if (opts.returnDate) url.searchParams.set("return_date", opts.returnDate);
+  url.searchParams.set("return_date", returnDate);
   url.searchParams.set("currency", "INR");
   url.searchParams.set("hl", "en");
   url.searchParams.set("adults", String(opts.passengers));
@@ -195,6 +201,21 @@ async function trySearchAPI(
     is_mock: false,
     source: "searchapi",
   };
+}
+
+// "2026-11-15" + 7 days → "2026-11-22"
+function defaultReturnDate(outbound: string): string {
+  try {
+    const d = new Date(outbound + "T00:00:00Z");
+    if (Number.isNaN(d.getTime())) throw new Error("bad date");
+    d.setUTCDate(d.getUTCDate() + 7);
+    return d.toISOString().slice(0, 10);
+  } catch {
+    // Fallback: 60 + 7 days from now
+    const d = new Date();
+    d.setDate(d.getDate() + 67);
+    return d.toISOString().slice(0, 10);
+  }
 }
 
 // ---------------------------------------------------------------------------

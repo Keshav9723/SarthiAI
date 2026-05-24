@@ -5,11 +5,11 @@
 import type { HandlerContext } from "@/lib/intents/types";
 
 const INTENT_DESCRIPTIONS = [
-  ["location_info",   "User asks about a specific destination — what to do/eat/see, when to visit, history, culture, attractions, food, safety, etc."],
+  ["location_info",   "User asks about a SPECIFIC NAMED destination — what to do/eat/see, when to visit, history, culture, attractions, food, safety, etc. The destination name MUST appear in the message."],
   ["view_itineraries","User wants to see their saved trips or itineraries (e.g. 'show my trips', 'what's planned for next month')."],
-  ["surprise_me",     "User asks WHERE they should go without naming a destination (e.g. 'where should I go in March', 'best places for a beach trip')."],
+  ["surprise_me",     "User asks WHERE they should go and does NOT name a specific destination. Examples: 'where should I go in March', 'best places for a beach trip', 'I have ₹40k and 5 days, where should I go?', 'recommend a hill station for couples', 'suggest a trip under ₹30k', 'plan a trip for me'. ANY question of the form 'where/which/recommend/suggest' with constraints (budget / days / month / group) but no named destination → surprise_me."],
   ["weather",         "User asks about CURRENT or near-term weather for a destination (e.g. 'weather in Goa today', 'is it raining in Mumbai now')."],
-  ["quick_plan",      "User asks Sarthi to plan a trip with key details in the message (e.g. 'plan 5 days in Kerala for ₹50k', 'create a trip to Manali for couple')."],
+  ["quick_plan",      "User asks Sarthi to plan a trip AND names a specific destination in the message. Examples: 'plan 5 days in Kerala for ₹50k', 'create a Manali trip for 2 couples', 'build a Goa itinerary'. The destination MUST be named — if it's missing, it's surprise_me instead."],
   ["modify_itinerary","User wants to CHANGE / EDIT / REPLACE / SWAP something in the itinerary they're currently viewing (e.g. 'swap day 3 evening with a sunset cruise', 'replace the temple visit on day 2 with a beach walk', 'rename this trip', 'add scuba diving to day 4'). Only valid when the user is on an /itinerary/[id] page."],
   ["general_chat",    "Greetings, thanks, off-topic, or anything that doesn't fit the above. The catch-all."],
 ] as const;

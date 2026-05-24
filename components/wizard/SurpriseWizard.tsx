@@ -13,9 +13,9 @@ import ResumePrompt from "./ResumePrompt";
 import { useWizardDraft } from "@/lib/useWizardDraft";
 import {
   MOCK_AVOID_OPTIONS,
+  MOCK_DEPARTURE_CITIES,
   MOCK_GROUP_TYPES,
   MOCK_VIBES,
-  destinationHref,
   findItineraryForDestination,
   formatINR,
   type DestinationMatch,
@@ -34,6 +34,7 @@ const DRAFT_KEY = "sarthi_surprise_draft";
 interface FormState {
   group: GroupType | null;
   groupSize: number;
+  fromCity: string;   // optional — improves scoring + carries into /generate
   vibes: string[];
   customVibe: string;
   budget: number;
@@ -50,6 +51,7 @@ interface FormState {
 const INITIAL: FormState = {
   group: null,
   groupSize: 2,
+  fromCity: "",
   vibes: [],
   customVibe: "",
   budget: 50000,
@@ -129,6 +131,7 @@ export default function SurpriseWizard() {
         body: JSON.stringify({
           group: form.group,
           groupSize: form.groupSize,
+          fromCity: form.fromCity || undefined,
           vibes: form.vibes,
           customVibe: form.customVibe || undefined,
           budget: form.budget,
@@ -176,7 +179,7 @@ export default function SurpriseWizard() {
   }
 
   if (phase === "results" && results) {
-    return <Results results={results} />;
+    return <Results results={results} surpriseForm={form} />;
   }
 
   return (
@@ -329,6 +332,64 @@ function StepGroup({
           </div>
         </div>
       )}
+
+      {/* Optional origin city. Improves budget realism + travel feasibility
+          scoring, and pre-fills the Generate wizard later. Stays optional —
+          users can skip and we still produce decent recommendations. */}
+      <div className="rounded-2xl bg-white border border-gray-100 p-5">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div>
+            <p className="text-xs font-semibold tracking-widest text-gray-500 uppercase">
+              Starting from
+              <span className="ml-2 text-[10px] text-gray-400 font-medium normal-case tracking-normal">
+                (optional)
+              </span>
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Helps us factor in travel cost and feasibility.
+            </p>
+          </div>
+          {form.fromCity && (
+            <button
+              type="button"
+              onClick={() => setForm((f) => ({ ...f, fromCity: "" }))}
+              className="text-xs font-semibold text-gray-500 hover:text-rose-600 underline underline-offset-2"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {MOCK_DEPARTURE_CITIES.slice(0, 8).map((c) => {
+            const selected = form.fromCity === c.city;
+            return (
+              <button
+                key={c.airportCode}
+                type="button"
+                onClick={() =>
+                  setForm((f) => ({
+                    ...f,
+                    fromCity: f.fromCity === c.city ? "" : c.city,
+                  }))
+                }
+                aria-pressed={selected}
+                className={`p-2.5 rounded-xl border-2 text-left transition-all focus-ring ${
+                  selected
+                    ? "border-green-600 bg-green-50"
+                    : "border-gray-200 bg-white hover:border-gray-300"
+                }`}
+              >
+                <p className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase">
+                  {c.airportCode}
+                </p>
+                <p className="mt-0.5 text-sm font-semibold text-gray-900 leading-tight">
+                  {c.city}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -615,7 +676,13 @@ function StepAvoid({
 // Results
 // ---------------------------------------------------------------------------
 
-function Results({ results }: { results: DestinationMatch[] }) {
+function Results({
+  results,
+  surpriseForm,
+}: {
+  results: DestinationMatch[];
+  surpriseForm: FormState;
+}) {
   return (
     <div className="max-w-5xl mx-auto px-4 md:px-8 py-12 md:py-16 animate-slide-up">
       <div className="text-center max-w-2xl mx-auto">
@@ -633,21 +700,47 @@ function Results({ results }: { results: DestinationMatch[] }) {
 
       <ul className="mt-10 space-y-4">
         {results.map((r) => (
-          <ResultCard key={r.id} match={r} />
+          <ResultCard key={r.id} match={r} surpriseForm={surpriseForm} />
         ))}
       </ul>
     </div>
   );
 }
 
-function ResultCard({ match }: { match: DestinationMatch }) {
-  // If we already have a pre-baked itinerary for this destination, skip the
-  // wizard and take the user straight to it.
+// Build the `/generate?…` href, carrying every field the Surprise wizard has
+// already collected so the user only has to tell us where they're starting
+// from. The downstream wizard skips the steps it can infer from this.
+function buildGenerateHref(destination: string, f: FormState): string {
+  const params = new URLSearchParams();
+  params.set("destination", destination);
+  if (f.group) params.set("group", f.group);
+  if (f.groupSize) params.set("groupSize", String(f.groupSize));
+  if (f.fromCity) params.set("fromCity", f.fromCity);
+  if (f.budget) params.set("budget", String(f.budget));
+  if (f.budgetTier) params.set("budgetTier", f.budgetTier);
+  if (f.startDate) params.set("startDate", f.startDate);
+  if (f.endDate) params.set("endDate", f.endDate);
+  if (f.vegetarian) params.set("vegetarian", "1");
+  if (f.familySafe) params.set("familySafe", "1");
+  if (f.coupleFriendly) params.set("coupleFriendly", "1");
+  params.set("from", "surprise");
+  return `/generate?${params.toString()}`;
+}
+
+function ResultCard({
+  match,
+  surpriseForm,
+}: {
+  match: DestinationMatch;
+  surpriseForm: FormState;
+}) {
+  // If we already have a pre-baked itinerary for this destination, we offer
+  // BOTH options: open the ready-made trip OR generate a fresh one tailored
+  // to the user's Surprise Me inputs. Some users want the curated trip, some
+  // want one built around their specific budget/dates.
   const existing = findItineraryForDestination(match.name);
-  const ctaHref = existing
-    ? `/itinerary/${existing.id}`
-    : destinationHref(match.name);
-  const ctaLabel = existing ? "View Trip" : "Plan This Trip";
+  const generateHref = buildGenerateHref(match.name, surpriseForm);
+  const viewHref = existing ? `/itinerary/${existing.id}` : null;
 
   return (
     <li className="bg-white rounded-3xl border border-gray-100 shadow-card overflow-hidden grid grid-cols-1 md:grid-cols-[280px_1fr] gap-0">
@@ -715,13 +808,23 @@ function ResultCard({ match }: { match: DestinationMatch }) {
               Weather · {match.weatherSummary}
             </p>
           </div>
-          <Link
-            href={ctaHref}
-            className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-green-600 hover:bg-green-700 text-white text-sm font-semibold"
-          >
-            {ctaLabel}
-            <ArrowRightIcon size={14} />
-          </Link>
+          <div className="flex flex-wrap gap-2 justify-end">
+            {viewHref && (
+              <Link
+                href={viewHref}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full border-2 border-green-600 text-green-700 hover:bg-green-50 text-sm font-semibold"
+              >
+                View Ready-Made
+              </Link>
+            )}
+            <Link
+              href={generateHref}
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-green-600 hover:bg-green-700 text-white text-sm font-semibold"
+            >
+              {viewHref ? "Generate Fresh" : "Plan This Trip"}
+              <ArrowRightIcon size={14} />
+            </Link>
+          </div>
         </div>
       </div>
     </li>

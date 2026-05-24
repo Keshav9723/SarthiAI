@@ -11,26 +11,51 @@ import {
   XIcon,
 } from "@/components/ui/Icons";
 import { toast } from "@/lib/toast";
+import ActivityInfo from "./ActivityInfo";
 
 interface Props {
   icon: React.ReactNode;
   label: string;
+  /** Optional time hint shown beside the label, e.g. "9:00 AM". */
+  timeHint?: string;
   /** AI-generated original text — used for reset. */
   original: string;
   /** Current value to render (may equal original or be user-edited). */
   value: string;
   /** True if the value differs from `original`. */
   isEdited: boolean;
+  /** Optional accent color class for the icon bubble, e.g. "bg-amber-50". */
+  bubbleBg?: string;
+  /** Optional location context (e.g. "Jaipur") used to disambiguate the
+      Wikipedia lookup in the "Learn more" dropdown. */
+  locationHint?: string;
   onSave: (next: string) => void;
   onReset: () => void;
+}
+
+// Splits "Visit Amber Fort and City Palace. Built in 1592, this UNESCO..."
+// into { title: "Visit Amber Fort and City Palace", description: "Built in..." }.
+// If the text has no sentence boundary, the whole string is the title.
+function splitTitleDescription(text: string): { title: string; description: string } {
+  const t = text.trim();
+  // Match first sentence end — period/!/? followed by space + capital letter,
+  // OR period at end of a clause longer than ~10 chars (to avoid abbreviations).
+  const m = t.match(/^(.{8,}?[.!?])\s+(.+)$/s);
+  if (m) {
+    return { title: m[1].replace(/[.!?]+$/, "").trim(), description: m[2].trim() };
+  }
+  return { title: t, description: "" };
 }
 
 export default function EditableSlot({
   icon,
   label,
+  timeHint,
   original,
   value,
   isEdited,
+  bubbleBg = "bg-saffron-50",
+  locationHint,
   onSave,
   onReset,
 }: Props) {
@@ -85,7 +110,7 @@ export default function EditableSlot({
   if (editing) {
     return (
       <div className="flex items-start gap-3">
-        <span className="grid place-items-center w-8 h-8 rounded-full bg-saffron-50 shrink-0 mt-0.5">
+        <span className={`grid place-items-center w-9 h-9 rounded-full ${bubbleBg} shrink-0 mt-0.5`}>
           {icon}
         </span>
         <div className="flex-1">
@@ -134,16 +159,23 @@ export default function EditableSlot({
     );
   }
 
+  const { title, description } = splitTitleDescription(value);
+
   return (
     <div className="flex items-start gap-3 group">
-      <span className="grid place-items-center w-8 h-8 rounded-full bg-saffron-50 shrink-0 mt-0.5">
+      <span className={`grid place-items-center w-9 h-9 rounded-full ${bubbleBg} shrink-0 mt-0.5`}>
         {icon}
       </span>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase">
+          <p className="text-[10px] font-semibold tracking-widest text-gray-500 uppercase">
             {label}
           </p>
+          {timeHint && (
+            <span className="text-[10px] font-medium text-gray-400">
+              · {timeHint}
+            </span>
+          )}
           {isEdited && (
             <span className="text-[10px] font-semibold tracking-widest text-saffron-700 uppercase bg-saffron-50 border border-saffron-100 px-1.5 py-0.5 rounded-full">
               Edited
@@ -153,12 +185,24 @@ export default function EditableSlot({
         <button
           type="button"
           onClick={startEditing}
-          className="mt-1 block text-left text-sm md:text-[15px] text-gray-800 leading-relaxed hover:bg-cream rounded px-1 -mx-1 transition-colors w-full"
+          className="mt-1 block text-left w-full hover:bg-cream rounded-lg px-1 -mx-1 transition-colors"
           title="Click to edit"
         >
-          {value}
+          <p className="text-[15px] md:text-base font-semibold text-gray-900 leading-snug">
+            {title}
+          </p>
+          {description && (
+            <p className="mt-1 text-sm text-gray-600 leading-relaxed">
+              {description}
+            </p>
+          )}
         </button>
-        <div className="mt-1 flex items-center gap-3 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity print:hidden">
+        {/* "Learn more" disclosure — opens a Wikipedia blurb. Hidden in print
+            because expanded cards add noise to the PDF. */}
+        <div className="print:hidden">
+          <ActivityInfo title={title} contextHint={locationHint} />
+        </div>
+        <div className="mt-1.5 flex items-center gap-3 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity print:hidden">
           <button
             type="button"
             onClick={startEditing}

@@ -9,6 +9,11 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "seed": "tsx scripts/seed.ts",
+    "seed:homepage": "tsx scripts/seed-homepage.ts",
+    "seed:templates": "tsx scripts/seed-templates.ts",
+    "seed:images": "tsx scripts/seed-images.ts",
+    "cleanup:templates": "tsx scripts/cleanup-templates.ts",
+    "cleanup:bad-templates": "tsx scripts/cleanup-bad-templates.ts",
     "scrape": "tsx scripts/scrape/index.ts",
     "scrape:all": "tsx scripts/scrape/index.ts --all"
   },

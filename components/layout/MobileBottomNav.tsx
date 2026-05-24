@@ -2,7 +2,7 @@
 
 // components/layout/MobileBottomNav.tsx
 // Fixed 5-tab bar visible only on small screens (sm and below). Primary
-// destinations: Home, Explore, Surprise (center, accented), Wishlist,
+// destinations: Home, Explore, Surprise (center, accented), Trips,
 // Profile. Active route is highlighted.
 
 import Link from "next/link";
@@ -11,7 +11,7 @@ import {
   CompassIcon,
   SearchIcon,
   DiceIcon,
-  HeartIcon,
+  MapPinIcon,
   UserIcon,
 } from "@/components/ui/Icons";
 
@@ -19,7 +19,7 @@ const TABS = [
   { href: "/", label: "Home", Icon: CompassIcon },
   { href: "/explore", label: "Explore", Icon: SearchIcon },
   { href: "/surprise", label: "Surprise", Icon: DiceIcon, primary: true },
-  { href: "/wishlist", label: "Saved", Icon: HeartIcon },
+  { href: "/my-itineraries", label: "Trips", Icon: MapPinIcon },
   { href: "/profile", label: "Profile", Icon: UserIcon },
 ] as const;
 

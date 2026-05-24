@@ -19,14 +19,30 @@ import { CheckIcon, SparklesIcon } from "@/components/ui/Icons";
 
 type Tab = "trip" | "inclusions" | "budget";
 
+export interface SeasonalWeather {
+  score: number;
+  avg_temp_c: number | null;
+  rain_mm: number | null;
+}
+
 interface Props {
   itinerary: Itinerary;
   previewBanner?: boolean;
+  /** Pre-rendered server component (FlightCard). Rendered between the Trip
+      Overview and the day-by-day itinerary if provided. */
+  flightCard?: React.ReactNode;
+  /** Real seasonal climate stats for the destination, fetched server-side. */
+  weather?: SeasonalWeather | null;
+  /** When true, the trip is a curated template — sidebar shows Save Trip. */
+  isTemplate?: boolean;
 }
 
 export default function ItineraryView({
   itinerary,
   previewBanner = false,
+  flightCard,
+  weather,
+  isTemplate = false,
 }: Props) {
   const [tab, setTab] = useState<Tab>("trip");
 
@@ -59,7 +75,13 @@ export default function ItineraryView({
         </p>
       </header>
 
-      <PhotoGrid title={itinerary.title} gallery={itinerary.gallery} />
+      <PhotoGrid
+        title={itinerary.title}
+        gallery={itinerary.gallery}
+        itinerary={itinerary}
+      />
+
+      {flightCard}
 
       <div className="mt-8 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8">
         {/* Left column */}
@@ -103,6 +125,7 @@ export default function ItineraryView({
             <TripMap
               destination={itinerary.destination}
               stops={itinerary.route.map((s) => ({ city: s.city }))}
+              days={itinerary.days.map((d) => ({ location: d.location }))}
               fromCity={itinerary.fromCity}
             />
             <section className="mt-6">
@@ -110,23 +133,29 @@ export default function ItineraryView({
                 Itinerary
               </h2>
               <div className="mt-4 space-y-1">
-                {groups.map((g, gi) => (
-                  <div key={`${g.city}-${gi}`}>
-                    <LocationGroupHeader city={g.city} nights={g.nights} />
-                    <div className="mt-2 pl-1 md:pl-2">
-                      {g.days.map((d) => (
-                        <DayRow
-                          key={d.dayNumber}
-                          day={d}
-                          itineraryId={itinerary.id}
-                        />
-                      ))}
+                {groups.map((g, gi) => {
+                  const isLast = gi === groups.length - 1;
+                  return (
+                    <div key={`${g.city}-${gi}`}>
+                      <LocationGroupHeader city={g.city} nights={g.nights} />
+                      <div className="mt-2 pl-1 md:pl-2">
+                        {g.days.map((d) => (
+                          <DayRow
+                            key={d.dayNumber}
+                            day={d}
+                            itineraryId={itinerary.id}
+                          />
+                        ))}
+                      </div>
+                      {/* Only render the transit connector BETWEEN groups,
+                          never after the last one — there's nowhere to
+                          transfer to. */}
+                      {g.transferToNext && !isLast && (
+                        <TransitConnector transfer={g.transferToNext} />
+                      )}
                     </div>
-                    {g.transferToNext && (
-                      <TransitConnector transfer={g.transferToNext} />
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
             </>
@@ -194,7 +223,7 @@ export default function ItineraryView({
         </div>
 
         {/* Right rail */}
-        <RouteSidebar itinerary={itinerary} />
+        <RouteSidebar itinerary={itinerary} weather={weather} isTemplate={isTemplate} />
       </div>
     </div>
   );
@@ -238,5 +267,39 @@ function groupDaysByCity(itinerary: Itinerary): DayGroup[] {
       b.nights = Math.max(0, b.days.length - 1);
     }
   }
-  return buckets;
+
+  // Merge zero-night buckets into adjacent ones:
+  //   • LEADING 0-night group (the origin city the LLM tacked on as a "Day 1
+  //     = Depart from X" header) → merge into the next bucket so users see
+  //     "Manali — 7 Nights" with the flight described as day 1's morning.
+  //   • TRAILING 0-night group (departure day back to origin) → merge into
+  //     the PREVIOUS bucket so users don't see a redundant "Manali — 0
+  //     Nights" header for the departure day.
+  //   • MIDDLE 0-night groups (rare — e.g. transit day with no overnight) →
+  //     fold into the previous bucket too; this keeps the route timeline in
+  //     sync without inventing extra location headers.
+  //
+  // In every case we DROP the merged-bucket's transferToNext; the route
+  // sidebar handles cross-city transits on its own.
+  const merged: DayGroup[] = [];
+  let pendingDays: Itinerary["days"] = [];
+  for (const b of buckets) {
+    if (b.nights === 0 && merged.length === 0) {
+      // Leading: hold these days, attach to the next real bucket.
+      pendingDays = [...pendingDays, ...b.days];
+      continue;
+    }
+    if (b.nights === 0 && merged.length > 0) {
+      // Trailing or middle 0-night bucket — fold into previous bucket.
+      const prev = merged[merged.length - 1];
+      prev.days = [...prev.days, ...b.days];
+      continue;
+    }
+    if (pendingDays.length > 0) {
+      b.days = [...pendingDays, ...b.days];
+      pendingDays = [];
+    }
+    merged.push(b);
+  }
+  return merged.length > 0 ? merged : buckets;
 }

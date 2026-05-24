@@ -105,3 +105,54 @@ export async function PATCH(
     patches_applied: patchResult.data.patches.length,
   });
 }
+
+// DELETE /api/itinerary/[id] — removes a user's saved trip. Auth-gated:
+// requires the signed-in user to be the owner. Templates are protected.
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const sb = createServerClient();
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Sign in to delete itineraries." }, { status: 401 });
+  }
+
+  // Load row + ownership check
+  const existing = await getItineraryById(params.id);
+  if (!existing) {
+    return NextResponse.json({ error: "Itinerary not found" }, { status: 404 });
+  }
+  if (existing.is_template) {
+    return NextResponse.json(
+      { error: "Template itineraries can't be deleted." },
+      { status: 403 }
+    );
+  }
+  if (existing.user_id !== user.id) {
+    return NextResponse.json({ error: "Not your itinerary" }, { status: 403 });
+  }
+
+  // Schema already has ON DELETE CASCADE for budgets / budget_categories /
+  // budget_expenses / checklist_state / trip_start_dates / itinerary_edits /
+  // chat_messages — but we explicitly null out budgets first as a safety
+  // net in case a deployed DB is missing the constraint (e.g. older migration).
+  const { error: budgetErr } = await sb
+    .from("budgets")
+    .delete()
+    .eq("itinerary_id", existing.id)
+    .eq("user_id", user.id);
+  if (budgetErr) {
+    // Non-fatal — log and continue. If the cascade fires we don't need this.
+    console.warn(`[itinerary DELETE] could not pre-delete budget: ${budgetErr.message}`);
+  }
+
+  const { error } = await sb.from("itineraries").delete().eq("id", existing.id);
+  if (error) {
+    return NextResponse.json(
+      { error: `Failed to delete: ${error.message}` },
+      { status: 500 }
+    );
+  }
+  return NextResponse.json({ id: existing.id, deleted: true });
+}

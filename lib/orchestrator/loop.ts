@@ -116,16 +116,37 @@ export async function runOrchestrator<TFinal>(
 
       // First time we hit a parse/schema failure, inject a strict JSON nudge
       // and let the model try again. qwen3.5:9b in particular tends to drift
-      // into prose after a long tool-use chain — this nudge usually fixes it.
+      // into prose (or generic training-data templates like "Los Angeles
+      // Adventure") after a long tool-use chain. The nudge repeats the
+      // expected schema VERBATIM so the model can't claim ignorance.
       if (!jsonNudgeUsed) {
         jsonNudgeUsed = true;
         conversation.push({
           role: "user",
           content:
-            `Your previous response could not be parsed as the required JSON itinerary. ` +
-            `Please respond NOW with ONLY a single JSON object matching the schema described in the system prompt. ` +
-            `No markdown headings, no ## or **, no bullet points, no commentary — just the raw JSON object starting with { and ending with }. ` +
-            (parseError ? `Specific issue: ${parseError}` : ""),
+            `Your previous response could not be parsed as the required itinerary. ` +
+            `IMPORTANT: this trip is in INDIA. Do NOT use foreign cities or generic templates.\n\n` +
+            `Respond NOW with ONLY a single JSON object — no markdown, no prose, no commentary, ` +
+            `just the raw JSON starting with { and ending with }. ` +
+            `Use EXACTLY these field names (no aliases, no synonyms):\n\n` +
+            `{\n` +
+            `  "title": "<short Indian-trip title>",\n` +
+            `  "destination": "<the exact destination from the user prompt>",\n` +
+            `  "state": "<the exact state from the user prompt>",\n` +
+            `  "duration": "<N nights / N+1 days>",\n` +
+            `  "nights": <integer>,\n` +
+            `  "total_days": <integer>,\n` +
+            `  "group_type": "couple"|"family"|"friends"|"solo",\n` +
+            `  "group_size": <integer>,\n` +
+            `  "highlights": [<string>, ...],\n` +
+            `  "total_budget": <integer rupees>,\n` +
+            `  "price_per_person": <integer rupees>,\n` +
+            `  "days": [{ "day_number": 1, "location": "...", "morning": "...", "afternoon": "...", "evening": "...", "type": "arrival" }, ...],\n` +
+            `  "route": [{ "city": "...", "nights": <int>, "transfer_to_next": null | { "mode": "...", "label": "...", "duration": "..." } }, ...],\n` +
+            `  "inclusions": [<string>, ...],\n` +
+            `  "exclusions": [<string>, ...]\n` +
+            `}\n\n` +
+            (parseError ? `Specific issue with your previous output: ${parseError}` : ""),
         });
         continue; // skip to next iteration without erroring out
       }

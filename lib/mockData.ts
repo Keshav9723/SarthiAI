@@ -244,10 +244,10 @@ export const MOCK_DESTINATIONS: Destination[] = [
     description:
       "Forts that look like sandstone wedding cakes, bazaars dripping with colour, and the bluest skies in winter.",
     image:
-      "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=1200",
+      "https://images.unsplash.com/photo-1599661046289-e31897846e41?w=1200",
     gallery: [
-      "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=800",
       "https://images.unsplash.com/photo-1599661046289-e31897846e41?w=800",
+      "https://images.unsplash.com/photo-1477586957327-847a0f3f4fe3?w=800",
       "https://images.unsplash.com/photo-1564507592333-c60657eea523?w=800",
     ],
     tags: ["cultural", "heritage", "adventure"],
@@ -270,7 +270,7 @@ export const MOCK_DESTINATIONS: Destination[] = [
       "https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=1200",
     gallery: [
       "https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=800",
-      "https://images.unsplash.com/photo-1626621261140-3491f1f00ce4?w=800",
+      "https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=800",
       "https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=800",
     ],
     tags: ["adventure", "nature", "snow"],
@@ -649,7 +649,7 @@ export const MOCK_ITINERARIES: Itinerary[] = [
       "https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=1200",
     gallery: [
       "https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=1200",
-      "https://images.unsplash.com/photo-1626621261140-3491f1f00ce4?w=800",
+      "https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=800",
       "https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=800",
       "https://images.unsplash.com/photo-1599661046289-e31897846e41?w=800",
     ],
@@ -1113,7 +1113,7 @@ export const MOCK_ITINERARIES: Itinerary[] = [
       "https://images.unsplash.com/photo-1532375810709-75b1da00537c?w=1200",
     gallery: [
       "https://images.unsplash.com/photo-1532375810709-75b1da00537c?w=1200",
-      "https://images.unsplash.com/photo-1626621261140-3491f1f00ce4?w=800",
+      "https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=800",
       "https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=800",
       "https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?w=800",
     ],

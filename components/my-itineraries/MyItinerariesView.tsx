@@ -8,8 +8,8 @@ import { useState } from "react";
 import Image from "@/components/ui/SafeImage";
 import { useAuth } from "@/lib/useAuth";
 import { toast } from "@/lib/toast";
+import { confirmDialog } from "@/lib/confirm";
 import {
-  MOCK_ITINERARIES,
   formatINR,
   type Itinerary,
 } from "@/lib/mockData";
@@ -30,7 +30,15 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: "draft", label: "Drafts" },
 ];
 
-export default function MyItinerariesView() {
+interface Props {
+  /** Itineraries fetched server-side (user's own, or templates for anon viewers). */
+  itineraries: Itinerary[];
+  isSignedIn: boolean;
+  /** True when signed in but no saved trips yet (different from anon viewer). */
+  isEmpty: boolean;
+}
+
+export default function MyItinerariesView({ itineraries, isSignedIn, isEmpty }: Props) {
   const { user, hydrated } = useAuth();
   const [filter, setFilter] = useState<Filter>("all");
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
@@ -51,16 +59,37 @@ export default function MyItinerariesView() {
     );
   }
 
-  if (!user) {
+  if (!user && !isSignedIn) {
     return <SignInPrompt />;
   }
 
-  const items = MOCK_ITINERARIES.filter((it) => !deletedIds.includes(it.id))
+  const items = itineraries
+    .filter((it) => !deletedIds.includes(it.id))
     .filter((it) => filter === "all" || it.status === filter);
 
-  function handleDelete(it: Itinerary) {
+  async function handleDelete(it: Itinerary) {
+    const ok = await confirmDialog({
+      title: `Delete "${it.title}"?`,
+      message:
+        "This permanently deletes the trip along with its linked budget, checklist, and chat history. This action can't be undone.",
+      confirmLabel: "Delete",
+      cancelLabel: "Keep",
+      destructive: true,
+    });
+    if (!ok) return;
+    // Optimistic UI — hide immediately, roll back if the API call fails.
     setDeletedIds((d) => [...d, it.id]);
-    toast.success(`Removed "${it.title}" from your saved trips.`);
+    try {
+      const res = await fetch(`/api/itinerary/${it.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
+      toast.success(`Deleted "${it.title}".`);
+    } catch (err) {
+      setDeletedIds((d) => d.filter((id) => id !== it.id));
+      toast.error(`Couldn't delete: ${(err as Error).message}`);
+    }
   }
 
   return (
@@ -95,7 +124,7 @@ export default function MyItinerariesView() {
         ))}
       </div>
 
-      {items.length === 0 ? (
+      {items.length === 0 || isEmpty ? (
         <EmptyState />
       ) : (
         <div className="mt-7 grid md:grid-cols-2 lg:grid-cols-3 gap-5">

@@ -6,7 +6,6 @@ import Image from "@/components/ui/SafeImage";
 import { formatINR, type Itinerary } from "@/lib/mockData";
 import { MapPinIcon, ArrowRightIcon } from "@/components/ui/Icons";
 import { BLUR_DATA_URL } from "@/lib/blurPlaceholder";
-import WishlistButton from "@/components/wishlist/WishlistButton";
 
 const GROUP_BADGE: Record<Itinerary["groupType"], string> = {
   family: "bg-saffron-50 text-saffron-600 border-saffron-100",
@@ -42,11 +41,6 @@ export default function ItineraryCard({
     <article
       className={`${widthClass} h-full flex flex-col relative bg-white rounded-2xl border border-gray-100 shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all overflow-hidden`}
     >
-      <WishlistButton
-        kind="itinerary"
-        id={itinerary.id}
-        label={itinerary.title}
-      />
       <Link
         href={`/itinerary/${itinerary.id}`}
         className="flex-1 flex flex-col group"

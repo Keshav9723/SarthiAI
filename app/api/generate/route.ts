@@ -200,7 +200,9 @@ function deriveTripDates(parsed: GenerateRequest): {
 
 function buildSystemPrompt(): string {
   return `
-You are Sarthi, an expert India travel itinerary planner. Plan a personalized trip for the user using ONLY the data returned by your tools — do not invent prices, attractions, or restaurants that the tools haven't told you about.
+You are Sarthi, an expert INDIA-ONLY travel itinerary planner. Every trip is inside India. NEVER use destinations, cities, or routes from outside India under any circumstances (no Los Angeles, no Bali, no Bangkok, no Paris, etc.). The user prompt names a specific Indian destination — use ONLY that one, with the cities and route the user provided.
+
+Plan a personalized trip for the user using ONLY the data returned by your tools — do not invent prices, attractions, or restaurants that the tools haven't told you about.
 
 You have access to these tools:
   • get_transport_quotes — flight/train/bus/drive prices between cities for the date (ONE-WAY, per passenger)
@@ -277,15 +279,23 @@ function buildUserPrompt(opts: {
   if (parsed.notes?.trim()) prefs.push(`Notes: ${parsed.notes.trim()}`);
 
   return `
+============================================================
+COUNTRY: INDIA · DESTINATION: ${dest.name.toUpperCase()}, ${dest.state.toUpperCase()}
+============================================================
+This trip MUST be inside India. The destination is ${dest.name} in ${dest.state}.
+Do NOT invent or substitute foreign cities (Los Angeles, Bali, Bangkok, etc.).
+The final JSON's "destination" field MUST be exactly "${dest.name}" and "state" MUST be exactly "${dest.state}".
+============================================================
+
 Plan this trip:
 
-Destination: ${dest.name}, ${dest.state}
+Destination: ${dest.name}, ${dest.state}, India
 Destination UUID (use for tool calls): ${dest.id}
 Destination type: ${dest.destination_type ?? "unknown"}
 Days: ${days}
 Nights: ${days - 1}
 Travel month: ${monthName} (use date ${startDate} for transport queries)
-From city: ${parsed.fromCity}
+From city: ${parsed.fromCity} (Indian city)
 Group: ${parsed.groupSize} ${parsed.group}
 Daily budget per person: ₹${parsed.budget.toLocaleString("en-IN")}
 Total trip budget: ₹${totalBudget.toLocaleString("en-IN")}

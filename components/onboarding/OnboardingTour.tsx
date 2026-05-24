@@ -15,7 +15,7 @@ import {
   ArrowRightIcon,
   XIcon,
   SearchIcon,
-  HeartIcon,
+  MapPinIcon,
 } from "@/components/ui/Icons";
 
 const KEY = "sarthi_onboarded";
@@ -61,11 +61,11 @@ const STEPS: Step[] = [
       "Tap the green compass bottom-right on any page. The chatbot knows the page you're on and can edit your itinerary in plain English.",
   },
   {
-    emoji: "❤️",
-    Icon: HeartIcon,
-    title: "Save what catches your eye",
+    emoji: "📍",
+    Icon: MapPinIcon,
+    title: "Every trip is saved automatically",
     body:
-      "Tap the heart on any destination or trip to save it to your wishlist for later.",
+      "Generate a trip and it lives under My Itineraries. Browse ready-made templates and tap Save Trip to add them to your collection.",
     cta: { label: "Explore destinations", href: "/explore" },
   },
 ];

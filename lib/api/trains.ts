@@ -11,6 +11,13 @@ import { findStation, distanceBetween } from "./codes";
 
 const RAPIDAPI_HOST = "irctc1.p.rapidapi.com";
 
+// Circuit breaker — RapidAPI IRCTC's free tier is 100 calls/day. Once we
+// get a 429, stop calling for the next 60 minutes so we don't spam the
+// terminal with warnings on every transport-card render.
+let rapidApiCircuitOpen = false;
+let rapidApiCircuitOpenedAt = 0;
+const RAPID_CIRCUIT_COOLDOWN_MS = 60 * 60 * 1000;
+
 export interface TrainQuote {
   available: boolean;
   cheapest_inr: number | null;
@@ -58,6 +65,15 @@ export async function getTrainQuote(opts: {
     return mockTrainQuote(opts.originCity, opts.destinationCity, opts.passengers);
   }
 
+  // Circuit-breaker check — if we hit a 429 recently, don't even try.
+  if (rapidApiCircuitOpen) {
+    if (Date.now() - rapidApiCircuitOpenedAt > RAPID_CIRCUIT_COOLDOWN_MS) {
+      rapidApiCircuitOpen = false; // cooldown elapsed, re-try below
+    } else {
+      return mockTrainQuote(opts.originCity, opts.destinationCity, opts.passengers);
+    }
+  }
+
   try {
     const url =
       `https://${RAPIDAPI_HOST}/api/v3/trainBetweenStations` +
@@ -70,7 +86,17 @@ export async function getTrainQuote(opts: {
       cache: "no-store",
     });
     if (!res.ok) {
-      console.warn(`[trains] RapidAPI HTTP ${res.status} — falling back to mock`);
+      // 429 / 403 = quota burned. Open the circuit so we don't spam the
+      // terminal on every render for the next hour.
+      if (res.status === 429 || res.status === 403) {
+        rapidApiCircuitOpen = true;
+        rapidApiCircuitOpenedAt = Date.now();
+        console.warn(
+          `[trains] RapidAPI HTTP ${res.status} — quota burned. Pausing live train lookups for 1 hour; using mock estimates.`
+        );
+      } else {
+        console.warn(`[trains] RapidAPI HTTP ${res.status} — falling back to mock`);
+      }
       return mockTrainQuote(opts.originCity, opts.destinationCity, opts.passengers);
     }
     const data = (await res.json()) as RapidApiTrainSearchResponse;

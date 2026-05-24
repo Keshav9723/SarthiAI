@@ -18,8 +18,8 @@ const CHANNELS = [
   {
     icon: MailIcon,
     label: "Email us",
-    value: "hello@sarthi.ai",
-    href: "mailto:hello@sarthi.ai",
+    value: "sarthiai18@gmail.com",
+    href: "mailto:sarthiai18@gmail.com",
   },
   {
     icon: TwitterIcon,
@@ -31,7 +31,7 @@ const CHANNELS = [
     icon: InstagramIcon,
     label: "On Instagram",
     value: "@sarthi.travel",
-    href: "https://instagram.com",
+    href: "https://www.instagram.com/keshavtanwar20/",
   },
 ];
 

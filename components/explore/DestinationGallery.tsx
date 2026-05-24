@@ -28,16 +28,23 @@ export default function DestinationGallery({
 
   return (
     <>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        {shown.map((src, i) => (
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 auto-rows-fr">
+        {shown.map((src, i) => {
+          // The first tile spans 2 columns × 2 rows. Sibling tiles are
+          // aspect-square, so the row track width = column width. A 2×2 tile
+          // must therefore be aspect-square too (not 4/3) — otherwise there's
+          // a half-row gap below it. `auto-rows-fr` on the parent locks the
+          // row heights to equal fractions so spans line up cleanly.
+          const isFirst = i === 0;
+          return (
           <button
             type="button"
             key={src + i}
             onClick={() => setOpenIndex(i)}
             aria-label={`View ${destinationName} photo ${i + 1} fullscreen`}
             className={`relative rounded-2xl overflow-hidden group focus-ring ${
-              i === 0
-                ? "col-span-2 row-span-2 aspect-[4/3]"
+              isFirst
+                ? "col-span-2 row-span-2 aspect-square"
                 : "aspect-square"
             }`}
           >
@@ -52,7 +59,8 @@ export default function DestinationGallery({
             />
             <span className="pointer-events-none absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-colors" />
           </button>
-        ))}
+          );
+        })}
       </div>
 
       <Lightbox

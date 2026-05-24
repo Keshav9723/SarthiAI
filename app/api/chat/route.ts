@@ -122,7 +122,17 @@ export async function POST(req: NextRequest) {
           message: (err as Error).message,
         }));
       } finally {
-        controller.close();
+        // Defer close() to the next tick — Node 22's TransformStream
+        // implementation has a GC race where closing in the same tick as
+        // the last enqueue() can throw "transformAlgorithm is not a
+        // function". Yielding to the event loop lets Node finalize the
+        // pending writes first. Harmless on Node 20.
+        await new Promise((r) => setTimeout(r, 0));
+        try {
+          controller.close();
+        } catch {
+          // Already closed by Node's wrapper — nothing to do.
+        }
       }
     },
   });

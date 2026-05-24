@@ -27,6 +27,7 @@ interface DestinationRow {
   destination_type: string | null;
   region: string | null;
   is_minimal: boolean | null;
+  trending_rank?: number | null;
 }
 
 function rowToDestination(r: DestinationRow): Destination {
@@ -139,11 +140,23 @@ export async function listDestinations(opts: {
   const destinations = (data as DestinationRow[]).map(rowToDestination);
 
   if (opts.resolveImages !== false) {
-    // Fill in any missing images via Unsplash (caches to DB on first hit)
+    // Fill in any missing images via Unsplash (caches to DB on first hit).
+    // Pass state + destination_type so the search query is disambiguating.
+    const rawMap = new Map<string, DestinationRow>(
+      (data as DestinationRow[]).map((r) => [r.slug, r])
+    );
     const missing = destinations.filter((d) => !d.image);
     if (missing.length > 0) {
       const imgMap = await getDestinationImages(
-        missing.map((d) => ({ slug: d.id, name: d.name }))
+        missing.map((d) => {
+          const raw = rawMap.get(d.id);
+          return {
+            slug: d.id,
+            name: d.name,
+            state: d.state,
+            destinationType: raw?.destination_type ?? null,
+          };
+        })
       );
       for (const d of destinations) {
         if (!d.image) {
@@ -155,6 +168,142 @@ export async function listDestinations(opts: {
   }
 
   return destinations;
+}
+
+/**
+ * Top N destinations for the homepage trending row.
+ * Prefers rows with a curated `tagline` (the original seeded set), falls back
+ * to any row with an image set, then any row at all.
+ */
+export async function listTrendingDestinations(limit = 8): Promise<Destination[]> {
+  const sb = createServerClient();
+  const { data, error } = await sb
+    .from("destinations")
+    .select(
+      "id, slug, name, state, tagline, description, image, gallery, tags, best_for, season, best_months, budget_from, recommended_duration, weather, temperature, destination_type, region, is_minimal, trending_rank"
+    )
+    .order("trending_rank", { ascending: true, nullsFirst: false })
+    .not("tagline", "is", null)
+    .limit(limit);
+  if (error) {
+    console.warn(`[destinations] trending failed: ${error.message}`);
+    return [];
+  }
+  const destinations = (data as DestinationRow[]).map(rowToDestination);
+
+  // Fill in missing images
+  const rawMap = new Map((data as DestinationRow[]).map((r) => [r.slug, r]));
+  const missing = destinations.filter((d) => !d.image);
+  if (missing.length > 0) {
+    const imgMap = await getDestinationImages(
+      missing.map((d) => {
+        const r = rawMap.get(d.id);
+        return {
+          slug: d.id, name: d.name, state: d.state,
+          destinationType: r?.destination_type ?? null,
+        };
+      })
+    );
+    for (const d of destinations) {
+      if (!d.image) {
+        const img = imgMap.get(d.id);
+        if (img) d.image = img.url;
+      }
+    }
+  }
+
+  return destinations;
+}
+
+/**
+ * Look up the seasonal climate score for a destination + month from the
+ * `seasonal_scores` table (populated by the Open-Meteo scraper). Used by the
+ * itinerary detail page to show real average temperature + rainfall instead
+ * of the generic "Pleasant" placeholder.
+ *
+ * The lookup is forgiving — the LLM sometimes writes destinations as
+ * "Jaipur, Rajasthan", "the pink city", "Goa beaches" etc. so we try:
+ *   1. Exact slug match  (Goa → "goa")
+ *   2. Exact name match  ("Goa")
+ *   3. Fuzzy name ILIKE  ("%Goa%")
+ *   4. First word slug   ("Jaipur, Rajasthan" → "jaipur")
+ *   5. First word name   ("Jaipur")
+ */
+export async function getSeasonalScore(opts: {
+  destinationName: string;
+  month: number;  // 1-12
+}): Promise<{
+  score: number;
+  avg_temp_c: number | null;
+  rain_mm: number | null;
+} | null> {
+  const sb = createServerClient();
+  const raw = opts.destinationName.trim();
+  if (!raw) return null;
+
+  const slugOf = (s: string) =>
+    s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+  const firstWord = raw.split(/[,\s]+/)[0] ?? raw;
+  const fullSlug = slugOf(raw);
+  const firstSlug = slugOf(firstWord);
+
+  // Try each lookup in turn. First hit wins.
+  const attempts: Array<{ kind: "slug" | "name" | "ilike"; value: string }> = [
+    { kind: "slug", value: fullSlug },
+    { kind: "name", value: raw },
+    { kind: "slug", value: firstSlug },
+    { kind: "name", value: firstWord },
+    { kind: "ilike", value: `%${raw}%` },
+    { kind: "ilike", value: `%${firstWord}%` },
+  ];
+
+  let destinationId: string | null = null;
+  for (const a of attempts) {
+    const filter =
+      a.kind === "slug"
+        ? sb.from("destinations").select("id").eq("slug", a.value)
+        : a.kind === "name"
+          ? sb.from("destinations").select("id").ilike("name", a.value)
+          : sb.from("destinations").select("id").ilike("name", a.value);
+    const { data } = await filter.limit(1).maybeSingle();
+    if (data?.id) {
+      destinationId = (data as { id: string }).id;
+      break;
+    }
+  }
+
+  // Fallback: the destination might be a STATE name ("Himachal Pradesh",
+  // "Kerala") that doesn't have its own destinations row. Find any city in
+  // that state with seasonal data and use its score as a state-level proxy.
+  if (!destinationId) {
+    const { data: stateMatch } = await sb
+      .from("destinations")
+      .select("id")
+      .ilike("state", raw)
+      .limit(1)
+      .maybeSingle();
+    if (stateMatch?.id) {
+      destinationId = (stateMatch as { id: string }).id;
+    }
+  }
+
+  if (!destinationId) {
+    console.warn(`[seasonal-score] no destinations row for "${raw}"`);
+    return null;
+  }
+
+  const { data, error } = await sb
+    .from("seasonal_scores")
+    .select("score, avg_temp_c, rain_mm")
+    .eq("destination_id", destinationId)
+    .eq("month", opts.month)
+    .maybeSingle();
+  if (error || !data) {
+    console.warn(`[seasonal-score] no row for destination_id=${destinationId} month=${opts.month}`);
+    return null;
+  }
+  return data as { score: number; avg_temp_c: number | null; rain_mm: number | null };
 }
 
 export async function getDestinationBySlug(slug: string): Promise<Destination | null> {
@@ -171,7 +320,13 @@ export async function getDestinationBySlug(slug: string): Promise<Destination | 
 
   const dest = rowToDestination(data as DestinationRow);
   if (!dest.image) {
-    const imgMap = await getDestinationImages([{ slug: dest.id, name: dest.name }]);
+    const raw = data as DestinationRow;
+    const imgMap = await getDestinationImages([{
+      slug: dest.id,
+      name: dest.name,
+      state: dest.state,
+      destinationType: raw.destination_type ?? null,
+    }]);
     const img = imgMap.get(dest.id);
     if (img) dest.image = img.url;
   }

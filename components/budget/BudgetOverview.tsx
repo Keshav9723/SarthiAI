@@ -44,10 +44,11 @@ export default function BudgetOverview() {
       .then((data) => {
         if (cancelled) return;
         const real: Budget[] = Array.isArray(data?.budgets) ? data.budgets : [];
-        // If the user has 0 real budgets, still show mocks so the page isn't
-        // empty during demo. Signed-in users with their own budgets see ONLY
-        // their own (no mock contamination).
-        setBudgets(real.length > 0 ? real : MOCK_BUDGETS);
+        // Signed-in users see ONLY their own budgets — if they have none,
+        // the list is empty and the empty-state CTA appears. We no longer
+        // fall through to MOCK_BUDGETS because that produced ghost entries
+        // for itineraries the user had already deleted.
+        setBudgets(real);
       })
       .finally(() => !cancelled && setLoading(false));
     return () => { cancelled = true; };

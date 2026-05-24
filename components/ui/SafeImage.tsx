@@ -22,6 +22,27 @@ type Props = Omit<ImageProps, "onError"> & {
   fallbackSeed?: string;
 };
 
+// Hosts that aggressively rate-limit image-optimizer fetches when we proxy
+// through Next's `/_next/image`. Loading their URLs directly (unoptimized)
+// bypasses our server's outbound calls and lets the browser hit them with
+// its own (much higher) rate budget. Wikimedia is the main offender — 50+
+// destination pages all pulling 6 photos each through one Next dev server
+// will burn through their quota in seconds.
+const SKIP_OPTIMIZATION_HOSTS = [
+  "upload.wikimedia.org",
+  "commons.wikimedia.org",
+];
+
+function shouldSkipOptimization(src: ImageProps["src"]): boolean {
+  if (typeof src !== "string") return false;
+  try {
+    const u = new URL(src);
+    return SKIP_OPTIMIZATION_HOSTS.some((h) => u.hostname.endsWith(h));
+  } catch {
+    return false;
+  }
+}
+
 export default function SafeImage({ src, alt, fallbackSeed, ...rest }: Props) {
   const seed =
     encodeURIComponent(fallbackSeed ?? alt ?? "sarthi-placeholder")
@@ -34,11 +55,17 @@ export default function SafeImage({ src, alt, fallbackSeed, ...rest }: Props) {
   // Reset when the upstream src changes (e.g. user navigates between cards)
   useEffect(() => { setCurrentSrc(src); }, [src]);
 
+  // Bypass Next's image optimizer for Wikimedia — the proxy hits their
+  // rate limit fast on /explore (which loads 312 destinations). Direct
+  // browser fetches are individually cached + much higher quota.
+  const unoptimized = shouldSkipOptimization(currentSrc);
+
   return (
     <Image
       {...rest}
       src={currentSrc}
       alt={alt}
+      unoptimized={unoptimized || (rest as { unoptimized?: boolean }).unoptimized}
       onError={() => {
         if (currentSrc !== fallback) setCurrentSrc(fallback);
       }}

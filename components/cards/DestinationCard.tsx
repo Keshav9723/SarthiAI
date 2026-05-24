@@ -11,7 +11,6 @@ import {
   type Destination,
 } from "@/lib/mockData";
 import { BLUR_DATA_URL } from "@/lib/blurPlaceholder";
-import WishlistButton from "@/components/wishlist/WishlistButton";
 
 interface Props {
   destination: Destination;
@@ -33,11 +32,6 @@ export default function DestinationCard({
 
   return (
     <div className={`${sizeClass} shrink-0 relative rounded-2xl overflow-hidden group`}>
-      <WishlistButton
-        kind="destination"
-        id={destination.id}
-        label={destination.name}
-      />
       <Link
         href={destinationHref(destination.name)}
         className="block w-full h-full focus-ring rounded-2xl"

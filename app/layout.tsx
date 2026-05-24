@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import AppChrome from "@/components/layout/AppChrome";
 import Toaster from "@/components/ui/Toast";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -72,6 +73,7 @@ export default function RootLayout({
       <body className="font-sans bg-cream text-gray-900 antialiased">
         <AppChrome>{children}</AppChrome>
         <Toaster />
+        <ConfirmDialog />
       </body>
     </html>
   );

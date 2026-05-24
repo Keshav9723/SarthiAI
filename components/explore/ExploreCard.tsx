@@ -12,7 +12,6 @@ import {
 } from "@/lib/mockData";
 import { ArrowRightIcon, MapPinIcon } from "@/components/ui/Icons";
 import { BLUR_DATA_URL } from "@/lib/blurPlaceholder";
-import WishlistButton from "@/components/wishlist/WishlistButton";
 
 export default function ExploreCard({
   destination,
@@ -21,16 +20,10 @@ export default function ExploreCard({
 }) {
   const hasItinerary = !!findItineraryForDestination(destination.name);
   return (
-    <div className="relative">
-      <WishlistButton
-        kind="destination"
-        id={destination.id}
-        label={destination.name}
-      />
-      <Link
-        href={`/explore/${encodeURIComponent(destination.name)}`}
-        className="group block bg-white rounded-2xl border border-gray-100 shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all overflow-hidden focus-ring"
-      >
+    <Link
+      href={`/explore/${encodeURIComponent(destination.name)}`}
+      className="group block bg-white rounded-2xl border border-gray-100 shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all overflow-hidden focus-ring"
+    >
       <div className="relative h-48 w-full">
         <Image
           src={destination.image}
@@ -94,7 +87,6 @@ export default function ExploreCard({
           </span>
         </div>
       </div>
-      </Link>
-    </div>
+    </Link>
   );
 }

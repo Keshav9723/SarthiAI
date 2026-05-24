@@ -33,8 +33,16 @@ export default function ChecklistView({
   );
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
-  function handleReset() {
-    if (!window.confirm("Reset every check on this list?")) return;
+  async function handleReset() {
+    const { confirmDialog } = await import("@/lib/confirm");
+    const ok = await confirmDialog({
+      title: "Reset checklist?",
+      message: "Uncheck every item on this list. You can re-check them anytime.",
+      confirmLabel: "Reset",
+      cancelLabel: "Cancel",
+      destructive: true,
+    });
+    if (!ok) return;
     reset();
     toast.info("Checklist reset.");
   }

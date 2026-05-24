@@ -1,27 +1,26 @@
 // app/itinerary/[id]/today/page.tsx
 // Live "Today" view — focused look at where the traveller should be today.
+// Loads from Supabase first (real user trips + templates), falls back to mocks.
 
 import { notFound } from "next/navigation";
 import TodayView from "@/components/itinerary/TodayView";
-import { getItineraryById, MOCK_ITINERARIES } from "@/lib/mockData";
+import { loadItinerary } from "@/lib/queries/loadItinerary";
 
 interface Props {
   params: { id: string };
 }
 
-export function generateStaticParams() {
-  return MOCK_ITINERARIES.map((it) => ({ id: it.id }));
-}
+export const dynamic = "force-dynamic";
 
-export function generateMetadata({ params }: Props) {
-  const it = getItineraryById(params.id);
+export async function generateMetadata({ params }: Props) {
+  const loaded = await loadItinerary(params.id);
   return {
-    title: it ? `Today · ${it.title}` : "Today",
+    title: loaded ? `Today · ${loaded.itinerary.title}` : "Today",
   };
 }
 
-export default function TodayPage({ params }: Props) {
-  const itinerary = getItineraryById(params.id);
-  if (!itinerary) notFound();
-  return <TodayView itinerary={itinerary} />;
+export default async function TodayPage({ params }: Props) {
+  const loaded = await loadItinerary(params.id);
+  if (!loaded) notFound();
+  return <TodayView itinerary={loaded.itinerary} />;
 }

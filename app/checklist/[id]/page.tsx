@@ -1,26 +1,25 @@
 // app/checklist/[id]/page.tsx — per-trip checklist.
+// Loads from Supabase first (real user trips + templates), falls back to mocks.
 
 import { notFound } from "next/navigation";
 import ChecklistView from "@/components/checklist/ChecklistView";
-import { getItineraryById, MOCK_ITINERARIES } from "@/lib/mockData";
+import { loadItinerary } from "@/lib/queries/loadItinerary";
 
 interface Props {
   params: { id: string };
 }
 
-export function generateStaticParams() {
-  return MOCK_ITINERARIES.map((it) => ({ id: it.id }));
-}
+export const dynamic = "force-dynamic";
 
-export function generateMetadata({ params }: Props) {
-  const it = getItineraryById(params.id);
+export async function generateMetadata({ params }: Props) {
+  const loaded = await loadItinerary(params.id);
   return {
-    title: it ? `Checklist · ${it.title}` : "Checklist",
+    title: loaded ? `Checklist · ${loaded.itinerary.title}` : "Checklist",
   };
 }
 
-export default function ChecklistPage({ params }: Props) {
-  const itinerary = getItineraryById(params.id);
-  if (!itinerary) notFound();
-  return <ChecklistView itinerary={itinerary} />;
+export default async function ChecklistPage({ params }: Props) {
+  const loaded = await loadItinerary(params.id);
+  if (!loaded) notFound();
+  return <ChecklistView itinerary={loaded.itinerary} />;
 }

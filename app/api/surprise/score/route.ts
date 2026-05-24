@@ -29,6 +29,7 @@ export const dynamic = "force-dynamic";
 const SurpriseRequestSchema = z.object({
   group: z.enum(["couple", "family", "friends", "solo"]).nullable(),
   groupSize: z.number().int().min(1).max(20),
+  fromCity: z.string().optional(),
   vibes: z.array(z.string()).default([]),
   customVibe: z.string().optional(),
   budget: z.number().int().min(5000),
@@ -150,8 +151,15 @@ export async function POST(req: NextRequest) {
   );
 
   // ---- Resolve images via Unsplash (cached to DB after first hit) ----
+  // Pass state + destination_type so the search disambiguates correctly
+  // (e.g. "Rajasthan" alone returns Taj Mahal; adding "Rajasthan desert" doesn't).
   const imageMap = await getDestinationImages(
-    scored.map((s) => ({ slug: s.slug, name: s.name }))
+    scored.map((s) => ({
+      slug: s.slug,
+      name: s.name,
+      state: s.state,
+      destinationType: s.destination_type,
+    }))
   );
 
   // ---- Shape response as DestinationMatch (matches frontend type) ----

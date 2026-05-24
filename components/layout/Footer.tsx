@@ -29,9 +29,9 @@ const COMPANY_LINKS = [
 
 const SOCIAL_LINKS = [
   { href: "https://twitter.com", label: "Twitter", Icon: TwitterIcon },
-  { href: "https://instagram.com", label: "Instagram", Icon: InstagramIcon },
+  { href: "https://www.instagram.com/keshavtanwar20/", label: "Instagram", Icon: InstagramIcon },
   { href: "https://facebook.com", label: "Facebook", Icon: FacebookIcon },
-  { href: "https://youtube.com", label: "YouTube", Icon: YoutubeIcon },
+  { href: "https://www.youtube.com/@fragger9723", label: "YouTube", Icon: YoutubeIcon },
 ];
 
 export default function Footer() {
@@ -121,11 +121,11 @@ export default function Footer() {
               ))}
             </div>
             <a
-              href="mailto:hello@sarthi.ai"
+              href="mailto:sarthiai18@gmail.com"
               className="mt-4 inline-flex items-center gap-2 text-sm text-forest-200 hover:text-white transition-colors"
             >
               <MailIcon size={16} />
-              hello@sarthi.ai
+              sarthiai18@gmail.co
             </a>
           </div>
         </div>
@@ -133,7 +133,7 @@ export default function Footer() {
         <div className="mt-12 pt-6 border-t border-white/10 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
           <p className="text-xs text-forest-300">
             © {new Date().getFullYear()} Sarthi Travel Labs · A NorthCap
-            University major project · All rights reserved.
+            University major project ·
           </p>
           <div className="flex items-center gap-5 text-xs text-forest-300">
             <Link href="/privacy" className="hover:text-white transition-colors">

@@ -1,3 +1,4 @@
+
 "use client";
 
 // lib/useAuth.ts
@@ -95,9 +96,13 @@ export function useAuth() {
     if (error) throw error;
   }
 
+  // Sign out from EVERY device this account is logged in on (mobile, other
+  // browsers, etc.) — Supabase's global scope kills all refresh tokens for
+  // the user. Matches user expectation when they sign out after losing a
+  // device or sharing their account.
   async function signOut() {
     const supabase = createClient();
-    const { error } = await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut({ scope: "global" });
     if (error) throw error;
   }
 

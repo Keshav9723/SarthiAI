@@ -89,3 +89,6 @@ temp/
 
 # ---------- scraper cache (raw HTML, regeneratable) ----------
 scripts/scrape/cache/
+
+# ---------- seed-templates debug dumps ----------
+scripts/seed-templates-debug/

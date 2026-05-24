@@ -140,9 +140,15 @@ export default function ProfileView() {
   }
 
   async function handleDelete() {
-    const ok = window.confirm(
-      "Delete your account? This clears your local preferences and signs you out. (Server-side account deletion ships with the next backend pass.)"
-    );
+    const { confirmDialog } = await import("@/lib/confirm");
+    const ok = await confirmDialog({
+      title: "Delete your account?",
+      message:
+        "This clears your local preferences and signs you out. Server-side account deletion ships with the next backend pass.",
+      confirmLabel: "Delete & sign out",
+      cancelLabel: "Cancel",
+      destructive: true,
+    });
     if (!ok) return;
     clearPrefs();
     try {
@@ -424,7 +430,14 @@ function ProfileHeader({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              onSave({ avatar: avatarUrl.trim() || undefined });
+              const url = avatarUrl.trim();
+              // Refuse data: URLs entirely — they bloat the JWT cookie past
+              // Node's header size limit and break the whole session.
+              if (url.startsWith("data:")) {
+                toast.error("Paste a hosted image URL — data URLs aren't supported.");
+                return;
+              }
+              onSave({ avatar: url || undefined });
               setEditingAvatar(false);
             }}
             className="mt-5 max-w-lg flex items-center gap-2 animate-slide-down"
@@ -433,7 +446,7 @@ function ProfileHeader({
               type="url"
               value={avatarUrl}
               onChange={(e) => setAvatarUrl(e.target.value)}
-              placeholder="https://… (image URL)"
+              placeholder="https://… (hosted image URL)"
               className="flex-1 px-4 py-2 rounded-full text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:ring-2 focus:ring-green-300"
             />
             <button

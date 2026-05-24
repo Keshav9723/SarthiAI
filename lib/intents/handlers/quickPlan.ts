@@ -7,6 +7,7 @@
 // the wizard with their parameters already populated.
 
 import type { HandlerContext, HandlerEvent } from "../types";
+import { handleSurpriseMe } from "./surpriseMe";
 
 export async function* handleQuickPlan(
   ctx: HandlerContext
@@ -19,11 +20,20 @@ export async function* handleQuickPlan(
   const month = ex.month;
   const fromCity = ex.from_city;
 
+  // No destination but we have budget/days/group context → the user is
+  // really asking "where should I go" (e.g. "I have ₹40k and 5 days, where
+  // should I go?"). Fall through to the Surprise Me handler so the user
+  // gets actual destination recommendations instead of a generic "which
+  // destination?" prompt.
   if (!dest) {
+    if (budget || days || group) {
+      yield* handleSurpriseMe(ctx);
+      return;
+    }
     yield {
       type: "token",
       content:
-        "Sure! Which destination are you thinking of? For example: \"plan 5 days in Goa for ₹50k\" or \"trip to Manali for 2 people next month\".",
+        "Sure! Tell me where you'd like to go (e.g. \"plan 5 days in Goa for ₹50k\") — or describe your constraints and I'll suggest destinations (\"where should I go in March with ₹40k for 5 days?\").",
     };
     return;
   }

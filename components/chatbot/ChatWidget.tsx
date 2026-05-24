@@ -347,13 +347,25 @@ export default function ChatWidget() {
               ref={scrollRef}
               className="flex-1 overflow-y-auto thin-scrollbar px-4 py-5 space-y-3 bg-cream"
             >
-              {messages.map((m) => (
-                <MessageBubble
-                  key={m.id}
-                  message={m}
-                  metadata={messageMetadata[m.id]}
-                />
-              ))}
+              {messages.map((m) => {
+                // Skip the empty streaming bot bubble — we render a separate
+                // TypingBubble for it below. Without this, the avatar would
+                // appear twice (the empty bubble + the typing indicator).
+                if (
+                  m.id === streamingBotId &&
+                  m.sender === "bot" &&
+                  (!m.text || m.text.length === 0)
+                ) {
+                  return null;
+                }
+                return (
+                  <MessageBubble
+                    key={m.id}
+                    message={m}
+                    metadata={messageMetadata[m.id]}
+                  />
+                );
+              })}
               {/* Show typing dots only while we're waiting for the FIRST token
                   on a streaming reply — once tokens start arriving, the bot
                   bubble itself shows progress. */}
