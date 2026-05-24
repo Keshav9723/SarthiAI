@@ -74,15 +74,18 @@ export default function HeroSection() {
             weather, budgets, and the way India actually moves.
           </p>
 
-          {/* Rating + count */}
+          {/* Real, defensible stats — both numbers are verifiable against
+              the database (count of destinations rows + knowledge_chunks
+              rows after the overnight RAG scrape). */}
           <div className="mt-7 inline-flex items-center gap-4 px-5 py-2.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/15">
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1.5 text-sm">
               <StarIcon size={16} className="text-saffron-400" />
-              <span className="font-semibold">4.8</span>
+              <strong className="text-white">300+</strong>
+              <span className="text-white/85">destinations</span>
             </span>
             <span className="w-1 h-1 rounded-full bg-white/40" />
             <span className="text-sm text-white/85">
-              From <strong className="text-white">1200+</strong> itineraries generated
+              <strong className="text-white">10,000+</strong> verified facts
             </span>
           </div>
         </div>

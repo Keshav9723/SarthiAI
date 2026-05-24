@@ -24,7 +24,7 @@ import {
   GetFestivalsArgs, GetFestivalsResult,
   type TransportModeQuote,
 } from "@/lib/schemas/tools";
-import type { ToolSpec } from "./types";
+import type { AnyToolSpec, ToolSpec } from "./types";
 
 // Helper: turn a Zod schema into a JSON-Schema-shaped object for the LLM.
 // We pass it directly through Zod's built-in JSON-schema generator if
@@ -429,7 +429,7 @@ export const getFestivalsTool: ToolSpec<
 // The registry
 // ===========================================================================
 
-export const ALL_TOOLS: ToolSpec[] = [
+export const ALL_TOOLS: AnyToolSpec[] = [
   getDestinationFactsTool,
   getClimateTool,
   getTransportQuotesTool,
@@ -440,7 +440,7 @@ export const ALL_TOOLS: ToolSpec[] = [
 ];
 
 /** Convert tool registry into the JSON-shape Ollama's /api/chat expects. */
-export function toolsForLLM(tools: ToolSpec[]) {
+export function toolsForLLM(tools: AnyToolSpec[]) {
   return tools.map((t) => ({
     type: "function" as const,
     function: {

@@ -21,10 +21,10 @@ function getChatCaller() {
   return ollamaChat;
 }
 import type {
+  AnyToolSpec,
   OrchestratorResult,
   RunOptions,
   ToolCallTrace,
-  ToolSpec,
 } from "./types";
 
 /**
@@ -36,7 +36,7 @@ export async function runOrchestrator<TFinal>(
   opts: RunOptions<TFinal>
 ): Promise<OrchestratorResult<TFinal>> {
   const maxIterations = opts.maxIterations ?? 8;
-  const toolMap = new Map<string, ToolSpec>(opts.tools.map((t) => [t.name, t]));
+  const toolMap = new Map<string, AnyToolSpec>(opts.tools.map((t) => [t.name, t]));
 
   const conversation: ChatMessage[] = [
     { role: "system", content: opts.system },

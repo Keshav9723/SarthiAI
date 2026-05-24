@@ -24,7 +24,7 @@ const COMPANY_LINKS = [
   { href: "/about", label: "About Sarthi" },
   { href: "/blog", label: "Blog" },
   { href: "/faq", label: "FAQ" },
-  { href: "/contact", label: "Contact" },
+  // { href: "/contact", label: "Contact" },  // Hidden — contact page is disabled
 ];
 
 const SOCIAL_LINKS = [

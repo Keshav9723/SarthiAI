@@ -70,7 +70,7 @@ export function useItineraryEdits(itineraryId: string) {
       return;
     }
     if (!isUuid(itineraryId)) return;
-    const syncKey = `${user.id}:${itineraryId}`;
+    const syncKey = `${user.email}:${itineraryId}`;
     if (lastSyncedRef.current === syncKey) return;
     lastSyncedRef.current = syncKey;
 

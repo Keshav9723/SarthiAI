@@ -89,8 +89,8 @@ export function usePreferences() {
       lastSyncedUserId.current = null;
       return;
     }
-    if (lastSyncedUserId.current === user.id) return;
-    lastSyncedUserId.current = user.id;
+    if (lastSyncedUserId.current === user.email) return;
+    lastSyncedUserId.current = user.email;
 
     (async () => {
       try {

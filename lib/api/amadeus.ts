@@ -136,12 +136,7 @@ export async function getFlightQuote(opts: {
         notes: "Amadeus returned no flights for this route + date",
       };
     }
-    const prices = offers
-      .map((o) => parseFloat(o.price?.total ?? "0"))
-      .filter((p) => p > 0)
-      .map((p) => (o => o)(o => o)(Math.round(p * (data.data?.[0]?.price?.currency === "USD" ? USD_TO_INR : 1))));
-
-    // Simpler: compute prices respecting currency on each offer
+    // Compute prices in INR, respecting each offer's quoted currency.
     const inrPrices: number[] = offers.map((o) => {
       const v = parseFloat(o.price?.total ?? "0");
       const cur = (o.price?.currency ?? "INR").toUpperCase();

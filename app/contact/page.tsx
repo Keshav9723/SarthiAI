@@ -1,4 +1,22 @@
 // app/contact/page.tsx — contact form + alt channels.
+//
+// COMMENTED OUT for the demo. /contact now returns a 404. The original
+// implementation is preserved below — to bring the page back, delete the
+// `notFound()` block and uncomment the original code.
+
+import { notFound } from "next/navigation";
+
+export const metadata = {
+  title: "Contact",
+  description: "Get in touch with the Sarthi team.",
+};
+
+export default function ContactPage() {
+  notFound();
+}
+
+/* ------------------------------------------------------------------
+   ORIGINAL CONTACT PAGE — restore by removing the comment markers.
 
 import Link from "next/link";
 import ContactForm from "@/components/contact/ContactForm";
@@ -8,11 +26,6 @@ import {
   InstagramIcon,
   CompassIcon,
 } from "@/components/ui/Icons";
-
-export const metadata = {
-  title: "Contact",
-  description: "Get in touch with the Sarthi team.",
-};
 
 const CHANNELS = [
   {
@@ -38,7 +51,6 @@ const CHANNELS = [
 export default function ContactPage() {
   return (
     <div>
-      {/* Hero */}
       <section className="bg-forest-950 text-white">
         <div className="max-w-7xl mx-auto px-4 md:px-8 py-16 md:py-20">
           <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-xs font-semibold tracking-widest uppercase backdrop-blur-sm">
@@ -55,7 +67,6 @@ export default function ContactPage() {
         </div>
       </section>
 
-      {/* Form + channels */}
       <section className="max-w-6xl mx-auto px-4 md:px-8 py-12 md:py-16 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-10">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-gray-900">
@@ -127,3 +138,5 @@ export default function ContactPage() {
     </div>
   );
 }
+
+   ------------------------------------------------------------------ */

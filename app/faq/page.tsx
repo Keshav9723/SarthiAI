@@ -149,6 +149,7 @@ export default function FAQPage() {
             The floating Ask Sarthi widget is on every page. It knows about
             destinations, itineraries, and your budget — try a question.
           </p>
+          {/* Contact link hidden — /contact is disabled.
           <Link
             href="/contact"
             className="mt-5 inline-flex items-center gap-2 px-5 py-3 rounded-full bg-white text-green-700 hover:bg-cream font-semibold transition-colors"
@@ -156,6 +157,7 @@ export default function FAQPage() {
             Contact us instead
             <ArrowRightIcon size={16} />
           </Link>
+          */}
         </div>
       </section>
     </div>
