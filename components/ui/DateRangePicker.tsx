@@ -28,6 +28,10 @@ interface Props {
   minDate?: Date;
   /** Inclusive maximum. */
   maxDate?: Date;
+  /** When set, after a start date is picked the picker only allows end
+   *  dates that produce a night count within [minNights, maxNights]. Used
+   *  by the Surprise wizard to lock the calendar to the chosen duration. */
+  nightsRange?: { minNights: number; maxNights: number };
 }
 
 const DAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -104,6 +108,7 @@ export default function DateRangePicker({
   onChange,
   minDate,
   maxDate,
+  nightsRange,
 }: Props) {
   const start = parseISO(startDate);
   const end = parseISO(endDate);
@@ -149,6 +154,20 @@ export default function DateRangePicker({
   function isDisabled(d: Date): boolean {
     if (d < min) return true;
     if (max && d > max) return true;
+    // Lock the end-date pick to the allowed nights window when a start has
+    // been chosen and we're constrained by a Surprise-Me duration option.
+    if (nightsRange && start && !end) {
+      const startStripped = stripTime(start);
+      const cand = stripTime(d);
+      // Don't disable the start date itself (so the user can re-click it).
+      if (sameDay(cand, startStripped)) return false;
+      const dayDiff = Math.round(
+        (cand.getTime() - startStripped.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      // Only forward selection inside this mode; otherwise both bounds.
+      if (dayDiff < nightsRange.minNights) return true;
+      if (dayDiff > nightsRange.maxNights) return true;
+    }
     return false;
   }
 
@@ -168,9 +187,12 @@ export default function DateRangePicker({
           {cells.map((cell, i) => {
             const { date, inMonth } = cell;
             const disabled = isDisabled(date);
-            const isStart = !!start && sameDay(date, start);
-            const isEnd = !!end && sameDay(date, end);
-            const inRange = isInRange(date);
+            // Range / pill styling must NEVER apply to out-of-month cells —
+            // the 42-cell grid overflows into next/prev months, and without
+            // this guard the start/end pill bleeds into the wrong calendar.
+            const isStart = inMonth && !!start && sameDay(date, start);
+            const isEnd = inMonth && !!end && sameDay(date, end);
+            const inRange = inMonth && isInRange(date);
             // Round only the edge of the highlighted range.
             const isRangeStart =
               inRange && start && sameDay(date, start);
@@ -225,7 +247,16 @@ export default function DateRangePicker({
   }
 
   // ---- Quick-pick presets ----
-  const presets = useMemo(() => buildPresets(), []);
+  // Filter presets to ones whose nights fit the active duration constraint
+  // (so "weekend" mode doesn't show a 10-day "In a month" chip).
+  const presets = useMemo(() => {
+    const all = buildPresets();
+    if (!nightsRange) return all;
+    return all.filter((p) => {
+      const nights = p.days - 1;
+      return nights >= nightsRange.minNights && nights <= nightsRange.maxNights;
+    });
+  }, [nightsRange]);
   function applyPreset(p: { start: Date; end: Date }) {
     onChange(toISO(p.start), toISO(p.end));
     setViewMonth(new Date(p.start.getFullYear(), p.start.getMonth(), 1));
@@ -282,8 +313,9 @@ export default function DateRangePicker({
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-card">
-      {/* ----- Presets bar ----- */}
-      <div className="px-5 pt-5 pb-3 border-b border-gray-100">
+      {/* ----- Presets bar (hidden when the active duration constraint
+            filters every preset out — keeps the empty section from showing) ----- */}
+      <div className={`px-5 pt-5 pb-3 border-b border-gray-100 ${presets.length === 0 ? "hidden" : ""}`}>
         <p className="text-[10px] font-semibold tracking-widest text-gray-500 uppercase mb-2">
           Quick pick
         </p>

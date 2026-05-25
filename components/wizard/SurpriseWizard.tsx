@@ -540,22 +540,27 @@ function StepDuration({
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
 }) {
-  const options: { id: FormState["duration"]; label: string; sub: string }[] = [
-    { id: "weekend", label: "Weekend", sub: "2–3 days" },
-    { id: "short", label: "Short trip", sub: "4–6 days" },
-    { id: "long", label: "Long trip", sub: "7–10 days" },
-    { id: "extended", label: "Extended", sub: "10+ days" },
+  const options: {
+    id: FormState["duration"];
+    label: string;
+    sub: string;
+    minNights: number;
+    maxNights: number;
+  }[] = [
+    { id: "weekend",  label: "Weekend",    sub: "2–3 days",  minNights: 1, maxNights: 2 },
+    { id: "short",    label: "Short trip", sub: "4–6 days",  minNights: 3, maxNights: 5 },
+    { id: "long",     label: "Long trip",  sub: "7–10 days", minNights: 6, maxNights: 9 },
+    { id: "extended", label: "Extended",   sub: "10+ days",  minNights: 9, maxNights: 14 },
   ];
+
+  const activeOption = options.find((o) => o.id === form.duration);
+  const nightsRange = activeOption
+    ? { minNights: activeOption.minNights, maxNights: activeOption.maxNights }
+    : undefined;
 
   return (
     <div className="space-y-5">
-      <DateRangePicker
-        startDate={form.startDate}
-        endDate={form.endDate}
-        onChange={(startDate, endDate) =>
-          setForm((f) => ({ ...f, startDate, endDate }))
-        }
-      />
+      {/* Duration first — picking it constrains the calendar below */}
       <div>
         <p className="text-xs font-semibold tracking-widest text-gray-500 uppercase mb-3">
           Duration preference
@@ -568,7 +573,9 @@ function StepDuration({
                 key={o.id}
                 type="button"
                 onClick={() =>
-                  setForm((f) => ({ ...f, duration: o.id }))
+                  // Changing the duration clears any existing date pick so
+                  // the next click starts fresh inside the new window.
+                  setForm((f) => ({ ...f, duration: o.id, startDate: "", endDate: "" }))
                 }
                 aria-pressed={selected}
                 className={`px-4 py-4 rounded-2xl border-2 text-left transition-colors ${
@@ -583,7 +590,22 @@ function StepDuration({
             );
           })}
         </div>
+        {activeOption && (
+          <p className="text-xs text-gray-500 mt-2">
+            Pick a start date below — the calendar will only allow end dates that
+            give you a {activeOption.label.toLowerCase()} ({activeOption.sub}).
+          </p>
+        )}
       </div>
+
+      <DateRangePicker
+        startDate={form.startDate}
+        endDate={form.endDate}
+        onChange={(startDate, endDate) =>
+          setForm((f) => ({ ...f, startDate, endDate }))
+        }
+        nightsRange={nightsRange}
+      />
     </div>
   );
 }

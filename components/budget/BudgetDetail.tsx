@@ -42,8 +42,23 @@ export default function BudgetDetail({ budget: initial, persistMode = "local" }:
     const spent = categories.reduce((s, c) => s + c.spent, 0);
     const remaining = planned - spent;
     const percentUsed = planned > 0 ? Math.round((spent / planned) * 100) : 0;
-    return { planned, spent, remaining, percentUsed };
-  }, [categories]);
+    // Derive a per-day figure from the human "12 Aug – 18 Aug" string so the
+    // third KPI shows something useful before any expense is recorded.
+    const tripDays = parseTripDays(initial.tripDates);
+    const perDay = tripDays ? Math.round(planned / tripDays) : null;
+    const perCategory = categories.length > 0
+      ? Math.round(planned / categories.length)
+      : null;
+    return {
+      planned,
+      spent,
+      remaining,
+      percentUsed,
+      tripDays,
+      perDay,
+      perCategory,
+    };
+  }, [categories, initial.tripDates]);
 
   // ----- Mutations -----
   // Each one updates local state OPTIMISTICALLY for snappy UI, then fires the
@@ -263,15 +278,33 @@ export default function BudgetDetail({ budget: initial, persistMode = "local" }:
         </div>
       </div>
 
-      {/* Live totals */}
+      {/* Live totals. Once an expense has been recorded we show the running
+          Remaining/Spent split; before any expense, that slot would just
+          duplicate Total Planned — so we surface a "Per day" or "Per
+          category" figure instead, which is genuinely useful at planning
+          time. */}
       <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat label="Total Planned" value={formatINR(totals.planned)} icon />
         <Stat label="Total Spent" value={formatINR(totals.spent)} />
-        <Stat
-          label="Remaining"
-          value={formatINR(totals.remaining)}
-          accent={totals.remaining < 0 ? "rose" : "green"}
-        />
+        {totals.spent > 0 ? (
+          <Stat
+            label="Remaining"
+            value={formatINR(totals.remaining)}
+            accent={totals.remaining < 0 ? "rose" : "green"}
+          />
+        ) : totals.perDay !== null ? (
+          <Stat
+            label={`Per Day · ${totals.tripDays}d`}
+            value={formatINR(totals.perDay)}
+          />
+        ) : totals.perCategory !== null ? (
+          <Stat
+            label={`Per Category · ${categories.length}`}
+            value={formatINR(totals.perCategory)}
+          />
+        ) : (
+          <Stat label="Remaining" value={formatINR(totals.remaining)} />
+        )}
         <Stat
           label="% Used"
           value={`${totals.percentUsed}%`}
@@ -435,6 +468,33 @@ function Stat({
       )}
     </div>
   );
+}
+
+// Best-effort parser for the human-readable trip-date strings the budget
+// view receives (e.g. "12 Aug – 18 Aug 2026" or "Nov 2025"). Returns the
+// inclusive day count, or null if no usable range is found.
+function parseTripDays(s?: string): number | null {
+  if (!s) return null;
+  // Look for two day-month tokens like "12 Aug" and "18 Aug".
+  const rx = /(\d{1,2})\s*([A-Za-z]{3,9})(?:\s+(\d{4}))?\s*[–\-—to]+\s*(\d{1,2})\s*([A-Za-z]{3,9})?(?:\s+(\d{4}))?/;
+  const m = s.match(rx);
+  if (!m) return null;
+  const months: Record<string, number> = {
+    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+  };
+  const d1 = parseInt(m[1], 10);
+  const mo1 = months[m[2].slice(0, 3).toLowerCase()];
+  const y1 = m[3] ? parseInt(m[3], 10) : new Date().getFullYear();
+  const d2 = parseInt(m[4], 10);
+  const mo2Token = m[5] ?? m[2];
+  const mo2 = months[mo2Token.slice(0, 3).toLowerCase()];
+  const y2 = m[6] ? parseInt(m[6], 10) : y1;
+  if (mo1 === undefined || mo2 === undefined) return null;
+  const start = new Date(y1, mo1, d1);
+  const end = new Date(y2, mo2, d2);
+  const days = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  return days > 0 && days < 60 ? days : null;
 }
 
 function Field({

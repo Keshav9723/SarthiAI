@@ -237,9 +237,7 @@ interface DayGroup {
 }
 
 function groupDaysByCity(itinerary: Itinerary): DayGroup[] {
-  // Walk the days in order and bucket them by `location`. We then attach the
-  // transferToNext from the matching route stop so the connector slots in
-  // after each group.
+  // Step 1 — Walk the days in order and bucket them by `location`.
   const buckets: DayGroup[] = [];
   for (const day of itinerary.days) {
     const last = buckets[buckets.length - 1];
@@ -250,47 +248,38 @@ function groupDaysByCity(itinerary: Itinerary): DayGroup[] {
     }
   }
 
-  // Annotate nights + transfer info using the route metadata. We match by
-  // city name in order so duplicates (rare here) still resolve correctly.
+  // Step 2 — Attach the transferToNext from the matching route stop. We
+  // intentionally do NOT trust route.nights here; the LLM frequently emits
+  // 0 across every stop. We recompute nights from day counts after merging.
   let routeCursor = 0;
   for (const b of buckets) {
     const route = itinerary.route
       .slice(routeCursor)
       .find((r) => r.city === b.city);
     if (route) {
-      b.nights = route.nights;
       b.transferToNext = route.transferToNext;
       const idx = itinerary.route.indexOf(route);
       routeCursor = idx + 1;
-    } else {
-      // Fallback: count days minus departure days.
-      b.nights = Math.max(0, b.days.length - 1);
     }
   }
 
-  // Merge zero-night buckets into adjacent ones:
-  //   • LEADING 0-night group (the origin city the LLM tacked on as a "Day 1
-  //     = Depart from X" header) → merge into the next bucket so users see
-  //     "Manali — 7 Nights" with the flight described as day 1's morning.
-  //   • TRAILING 0-night group (departure day back to origin) → merge into
-  //     the PREVIOUS bucket so users don't see a redundant "Manali — 0
-  //     Nights" header for the departure day.
-  //   • MIDDLE 0-night groups (rare — e.g. transit day with no overnight) →
-  //     fold into the previous bucket too; this keeps the route timeline in
-  //     sync without inventing extra location headers.
+  // Step 3 — Merge stub buckets (single-day, 0-night) into adjacent ones:
+  //   • LEADING stub (origin / transit day) → folded into the next real bucket.
+  //   • TRAILING stub (departure day) → folded into the previous bucket.
+  //   • MIDDLE stubs (rare — transit day with no overnight) → folded into
+  //     the previous bucket too.
   //
-  // In every case we DROP the merged-bucket's transferToNext; the route
-  // sidebar handles cross-city transits on its own.
+  // We DROP the merged-bucket's transferToNext; the route sidebar handles
+  // cross-city transits on its own.
   const merged: DayGroup[] = [];
   let pendingDays: Itinerary["days"] = [];
   for (const b of buckets) {
-    if (b.nights === 0 && merged.length === 0) {
-      // Leading: hold these days, attach to the next real bucket.
+    const isStub = b.days.length === 1;
+    if (isStub && merged.length === 0) {
       pendingDays = [...pendingDays, ...b.days];
       continue;
     }
-    if (b.nights === 0 && merged.length > 0) {
-      // Trailing or middle 0-night bucket — fold into previous bucket.
+    if (isStub && merged.length > 0) {
       const prev = merged[merged.length - 1];
       prev.days = [...prev.days, ...b.days];
       continue;
@@ -301,5 +290,29 @@ function groupDaysByCity(itinerary: Itinerary): DayGroup[] {
     }
     merged.push(b);
   }
-  return merged.length > 0 ? merged : buckets;
+
+  // If every bucket was a stub (the LLM gave each day a slightly different
+  // location string like "Goa - North Beaches" vs "Goa - South Beaches"),
+  // merged ends up empty. Collapse all those stub days into one bucket using
+  // the trip's overall destination as the city name.
+  if (merged.length === 0 && pendingDays.length > 0) {
+    merged.push({
+      city: itinerary.destination,
+      nights: 0,
+      days: pendingDays,
+    });
+    pendingDays = [];
+  } else if (pendingDays.length > 0 && merged.length > 0) {
+    // Defensive: any leftover pending days fold into the last bucket.
+    merged[merged.length - 1].days.push(...pendingDays);
+  }
+
+  // Step 4 — Recompute nights for every surviving bucket from its FINAL
+  // day count (nights = days − 1). This is the source of truth; the LLM's
+  // route.nights is too unreliable to be used directly.
+  for (const b of merged) {
+    b.nights = Math.max(0, b.days.length - 1);
+  }
+
+  return merged;
 }

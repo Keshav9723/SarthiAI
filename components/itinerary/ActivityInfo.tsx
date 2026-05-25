@@ -187,25 +187,66 @@ async function fetchSummary(pageTitle: string): Promise<InfoResult | null> {
 // Mahal", which actually has a Wikipedia article.
 function buildQueryCandidates(rawTitle: string, context?: string): string[] {
   const clean = cleanTitle(rawTitle);
+  const cleanContext = cleanLocationHint(context);
   const queries: string[] = [];
 
-  // Split on common conjunctions / separators to grab the first phrase.
-  // Most travel titles have the headline place name first.
-  const splitRx = /\s*(?:,|\sand\s|\s&\s|\sor\s|\swith\s|\sfor\s|\sat\s)\s*/i;
+  // Split on common conjunctions / separators / transit words to grab the
+  // first phrase. Old itineraries emit short transit lines like "Arrive
+  // Manali after overnight Volvo from Delhi" — splitting on "after" / "from"
+  // recovers "Manali" as the first chunk.
+  const splitRx =
+    /\s*(?:,|\sand\s|\s&\s|\sor\s|\swith\s|\sfor\s|\sat\s|\sfrom\s|\safter\s|\sbefore\s|\svia\s|\sthen\s|\son\sthe\s|\sby\s)\s*/i;
   const parts = clean.split(splitRx).filter((p) => p.trim().length > 1);
   const first = parts[0]?.trim();
 
-  // 1. First chunk + context  ("Hawa Mahal Jaipur")
-  if (first && context) queries.push(`${first} ${context}`);
-  // 2. First chunk alone        ("Hawa Mahal")
+  // Also try the first capitalised proper-noun run from the raw title. For
+  // "Arrive Manali after overnight Volvo from Delhi" this grabs "Manali",
+  // which the verb/preposition cleaner alone won't recover cleanly.
+  const properNoun = firstProperNoun(rawTitle);
+
+  // 1. Proper noun + context     ("Manali Himachal")
+  if (properNoun && cleanContext) queries.push(`${properNoun} ${cleanContext}`);
+  // 2. Proper noun alone         ("Manali")
+  if (properNoun) queries.push(properNoun);
+  // 3. First chunk + context     ("Hawa Mahal Jaipur")
+  if (first && cleanContext) queries.push(`${first} ${cleanContext}`);
+  // 4. First chunk alone         ("Hawa Mahal")
   if (first) queries.push(first);
-  // 3. Whole cleaned title + context  ("Hawa Mahal, Johori Bazaar Jaipur")
-  if (context) queries.push(`${clean} ${context}`);
-  // 4. Whole cleaned title alone
+  // 5. Whole cleaned title + context
+  if (cleanContext) queries.push(`${clean} ${cleanContext}`);
+  // 6. Whole cleaned title alone
   queries.push(clean);
+  // 7. Context alone — last resort so the dropdown shows the destination
+  //    article even when the activity itself is unsearchable.
+  if (cleanContext) queries.push(cleanContext);
 
   // Dedupe while preserving order.
   return Array.from(new Set(queries.map((q) => q.trim()))).filter(Boolean);
+}
+
+/** Extract the first capitalised proper-noun run from raw text. Skips a
+ *  leading verb (which is also capitalised at the start of a sentence) by
+ *  ignoring the first word if it matches a common verb. */
+function firstProperNoun(s: string): string | null {
+  const verbStarters = /^(Arrive|Depart|Visit|Explore|See|Tour|Hike|Walk|Drive|Board|Fly|Return|Head|Leave|Dine|Eat|Enjoy|Relax|Shop|Stroll|Wander|Discover|Catch|Attend|Experience|Check)\b/i;
+  const stripped = s.replace(verbStarters, "").trim();
+  const m = stripped.match(/[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,3}/);
+  return m ? m[0] : null;
+}
+
+/** Itinerary day.location is often a transit string like "Delhi to Goa" or
+ *  "Delhi → Manali". For Wikipedia disambiguation we want the destination
+ *  side of that arrow. Also strips area suffixes like "Goa - Baga &
+ *  Calangute" → "Goa". */
+function cleanLocationHint(s?: string): string | undefined {
+  if (!s) return undefined;
+  let t = s.trim();
+  // "Delhi to Goa" / "Delhi → Goa" / "Delhi - Goa" → take the right side.
+  const arrowRx = /\s+(?:to|→|->|–|-)\s+/i;
+  if (arrowRx.test(t)) t = t.split(arrowRx).pop()!.trim();
+  // "Goa - Baga & Calangute" / "Goa: Baga" → keep the first segment.
+  t = t.split(/\s*[-:]\s*/)[0].trim();
+  return t || undefined;
 }
 
 function cleanTitle(s: string): string {
@@ -224,9 +265,12 @@ function cleanTitle(s: string): string {
     .replace(/^(in|at|on|from|to|around|near|by|across|along|inside|through|via)\s+/i, "")
     // 4. Leading "the " ("the Old City" → "Old City")
     .replace(/^the\s+/i, "")
-    // 5. Trailing parenthetical like "(Chandpole area)"
+    // 5. Trailing parenthetical like "(Chandpole area)" or "(evening)"
     .replace(/\s*\([^)]*\)\s*$/g, "")
-    // 6. Trailing punctuation
+    // 6. Trailing transit / timing tail — "Manali after overnight Volvo
+    //    from Delhi" → "Manali". Cuts at the first transit connector.
+    .replace(/\s+(after|before|via|from|by|then|on the)\s+.+$/i, "")
+    // 7. Trailing punctuation
     .replace(/[.!?,]+$/, "")
     .trim();
 }

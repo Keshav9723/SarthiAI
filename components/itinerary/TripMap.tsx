@@ -30,7 +30,34 @@ export default function TripMap({ destination, stops, days, fromCity }: Props) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const [errored, setErrored] = useState(false);
 
-  if (!apiKey || errored) return null;
+  if (errored) return null;
+
+  // Missing API key — render a visible placeholder instead of silently
+  // hiding the section. The Embed API key MUST be NEXT_PUBLIC_-prefixed so
+  // client code can read it; the server-side GOOGLE_MAPS_API_KEY used by
+  // /api/debug/health is a different variable.
+  if (!apiKey) {
+    return (
+      <section className="mt-8">
+        <h2 className="text-xl font-bold tracking-tight text-gray-900 mb-3">
+          Trip map
+        </h2>
+        <div className="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center">
+          <p className="text-sm text-gray-600">
+            Map unavailable — add{" "}
+            <code className="px-1.5 py-0.5 rounded bg-gray-200 text-gray-800 text-xs">
+              NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+            </code>{" "}
+            to your{" "}
+            <code className="px-1.5 py-0.5 rounded bg-gray-200 text-gray-800 text-xs">
+              .env.local
+            </code>{" "}
+            and restart the dev server.
+          </p>
+        </div>
+      </section>
+    );
+  }
 
   const cities = collectCities({ destination, stops, days, fromCity });
   const src = buildEmbedSrc({ apiKey, cities, destination });
