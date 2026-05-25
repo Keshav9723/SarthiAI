@@ -2784,10 +2784,10 @@ export function getBotResponse(message: string, context: PageContext): string {
   return DEFAULT_BOT_REPLY;
 }
 
-export function getOpener(context: PageContext, destination?: string): string {
-  if (context === "itinerary" && destination) {
-    return `I can see your itinerary for ${destination}. What would you like to change? You can say things like "Add a heritage walk on Day 2" or "Replace the evening activity on Day 3".`;
-  }
+export function getOpener(context: PageContext, _destination?: string): string {
+  // For /itinerary/[id] the chat widget now passes the UUID (not the trip
+  // name) so the handler can DB-load it. We no longer echo a destination
+  // back in the opener — the user is looking at the page anyway.
   return CONTEXT_OPENERS[context] ?? CONTEXT_OPENERS.default;
 }
 

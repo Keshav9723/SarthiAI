@@ -178,19 +178,34 @@ export async function* handleModifyItinerary(
   // 7. Apply + persist
   const updated = applyItineraryPatch(itinerary, patch);
   const sb = createServerClient();
-  const { error: updateErr } = await sb
+  // .select() returns the updated rows so we can tell if RLS silently
+  // dropped the write (success with zero rows affected — common when the
+  // server client can't see the user's session JWT for some reason).
+  const { data: updatedRows, error: updateErr } = await sb
     .from("itineraries")
     .update({
       title: updated.title,
       days: updated.days,
       highlights: updated.highlights,
     })
-    .eq("id", itineraryRow.id);
+    .eq("id", itineraryRow.id)
+    .select("id");
 
   if (updateErr) {
     yield {
       type: "token",
       content: `I planned the edit but couldn't save it: ${updateErr.message}`,
+    };
+    return;
+  }
+  if (!updatedRows || updatedRows.length === 0) {
+    console.error("[modify_itinerary] update affected 0 rows", {
+      itineraryId: itineraryRow.id,
+      userId: ctx.userId,
+    });
+    yield {
+      type: "token",
+      content: "I planned the edit but the save was blocked — your session may have expired. Try signing out and back in, then ask again.",
     };
     return;
   }

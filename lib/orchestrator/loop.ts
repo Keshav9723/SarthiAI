@@ -6,18 +6,17 @@
 
 import { ollamaChat, type ChatMessage } from "@/lib/api/llm/ollama-chat";
 import { geminiChat } from "@/lib/api/llm/gemini-chat";
-import { openrouterChat } from "@/lib/api/llm/openrouter-chat";
+import { openaiChat } from "@/lib/api/llm/openai-chat";
+import { anthropicChat } from "@/lib/api/llm/anthropic-chat";
+import { deepseekChat } from "@/lib/api/llm/deepseek-chat";
 import { toolsForLLM } from "./tools";
 
 function getChatCaller() {
   const p = (process.env.LLM_PROVIDER ?? "ollama").toLowerCase();
   if (p === "gemini") return geminiChat;
-  if (p === "openrouter") return openrouterChat;
-  if (p === "claude") {
-    throw new Error(
-      "Claude chat wrapper not implemented yet. Use LLM_PROVIDER=gemini, openrouter, or ollama."
-    );
-  }
+  if (p === "openai") return openaiChat;
+  if (p === "anthropic") return anthropicChat;
+  if (p === "deepseek") return deepseekChat;
   return ollamaChat;
 }
 import type {

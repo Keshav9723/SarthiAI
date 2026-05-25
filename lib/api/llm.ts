@@ -11,16 +11,17 @@
 
 import { z } from "zod";
 import { ollamaGenerate, type OllamaGenerateInput } from "./llm/ollama";
-import { claudeGenerate } from "./llm/claude";
 import { geminiGenerate } from "./llm/gemini";
-import { openrouterGenerate } from "./llm/openrouter";
+import { openaiGenerate } from "./llm/openai";
+import { anthropicGenerate } from "./llm/anthropic";
+import { deepseekGenerate } from "./llm/deepseek";
 
-export type LLMProvider = "ollama" | "claude" | "gemini" | "openrouter";
+export type LLMProvider = "ollama" | "gemini" | "openai" | "anthropic" | "deepseek";
 
 function getProvider(): LLMProvider {
   const v = (process.env.LLM_PROVIDER ?? "ollama").toLowerCase();
-  if (v === "ollama" || v === "claude" || v === "gemini" || v === "openrouter") return v;
-  throw new Error(`Unknown LLM_PROVIDER "${v}". Use "ollama", "gemini", "openrouter", or "claude".`);
+  if (v === "ollama" || v === "gemini" || v === "openai" || v === "anthropic" || v === "deepseek") return v;
+  throw new Error(`Unknown LLM_PROVIDER "${v}". Use "ollama", "gemini", "openai", "anthropic", or "deepseek".`);
 }
 
 export interface GenerateStructuredOptions<T extends z.ZodTypeAny> {
@@ -44,9 +45,10 @@ export async function generateStructured<T extends z.ZodTypeAny>(
 ): Promise<z.infer<T>> {
   const provider = getProvider();
   const callModel: (input: OllamaGenerateInput) => Promise<string> =
-    provider === "claude" ? claudeGenerate :
     provider === "gemini" ? geminiGenerate :
-    provider === "openrouter" ? openrouterGenerate :
+    provider === "openai" ? openaiGenerate :
+    provider === "anthropic" ? anthropicGenerate :
+    provider === "deepseek" ? deepseekGenerate :
     ollamaGenerate;
 
   const maxRetries = opts.maxRetries ?? 1;
@@ -98,9 +100,10 @@ export async function generateText(opts: {
 }): Promise<string> {
   const provider = getProvider();
   const callModel: (input: OllamaGenerateInput) => Promise<string> =
-    provider === "claude" ? claudeGenerate :
     provider === "gemini" ? geminiGenerate :
-    provider === "openrouter" ? openrouterGenerate :
+    provider === "openai" ? openaiGenerate :
+    provider === "anthropic" ? anthropicGenerate :
+    provider === "deepseek" ? deepseekGenerate :
     ollamaGenerate;
   return callModel({
     system: opts.system,

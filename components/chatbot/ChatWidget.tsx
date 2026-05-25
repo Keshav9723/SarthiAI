@@ -20,7 +20,6 @@ import {
 import {
   getOpener,
   getSuggestedChips,
-  getItineraryById,
   type ChatMessage,
   type PageContext,
 } from "@/lib/mockData";
@@ -45,10 +44,13 @@ export default function ChatWidget() {
   const params = useParams<{ id?: string }>();
   const context = useMemo(() => pathToContext(pathname), [pathname]);
 
-  // For /itinerary/[id], grab the destination so the opener feels personal.
+  // For /itinerary/[id], pass the URL id straight through so the modify-itinerary
+  // handler can DB-load it. (Earlier this looked up the destination name in
+  // mockData — which only contains template itineraries — so user-generated
+  // trips silently sent `undefined` and the handler bailed out.)
   const destination = useMemo(() => {
     if (context !== "itinerary" || !params?.id) return undefined;
-    return getItineraryById(params.id)?.destination;
+    return params.id;
   }, [context, params]);
 
   const [isOpen, setIsOpen] = useState(false);

@@ -18,6 +18,16 @@ const GEMINI_DEFAULT_MODEL = "gemini-2.5-flash";
 const OPENROUTER_HOST = "https://openrouter.ai/api/v1";
 const OPENROUTER_DEFAULT_MODEL = "deepseek/deepseek-v4-flash:free";
 
+const OPENAI_HOST = "https://api.openai.com/v1";
+const OPENAI_DEFAULT_MODEL = "gpt-4o-mini";
+
+const ANTHROPIC_HOST = "https://api.anthropic.com/v1";
+const ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-6";
+const ANTHROPIC_VERSION = "2023-06-01";
+
+const DEEPSEEK_HOST = "https://api.deepseek.com/v1";
+const DEEPSEEK_DEFAULT_MODEL = "deepseek-chat";
+
 export interface StreamOptions {
   system: string;
   user: string;
@@ -25,10 +35,13 @@ export interface StreamOptions {
   maxTokens?: number;
 }
 
-function getProvider(): "ollama" | "gemini" | "openrouter" {
+function getProvider(): "ollama" | "gemini" | "openrouter" | "openai" | "anthropic" | "deepseek" {
   const p = (process.env.LLM_PROVIDER ?? "ollama").toLowerCase();
   if (p === "gemini") return "gemini";
   if (p === "openrouter") return "openrouter";
+  if (p === "openai") return "openai";
+  if (p === "anthropic") return "anthropic";
+  if (p === "deepseek") return "deepseek";
   return "ollama";
 }
 
@@ -36,6 +49,9 @@ export async function* streamText(opts: StreamOptions): AsyncGenerator<string> {
   const provider = getProvider();
   if (provider === "gemini") yield* streamGemini(opts);
   else if (provider === "openrouter") yield* streamOpenRouter(opts);
+  else if (provider === "openai") yield* streamOpenAI(opts);
+  else if (provider === "anthropic") yield* streamAnthropic(opts);
+  else if (provider === "deepseek") yield* streamDeepSeek(opts);
   else yield* streamOllama(opts);
 }
 
@@ -160,6 +176,210 @@ async function* streamOpenRouter(opts: StreamOptions): AsyncGenerator<string> {
   }
 
   if (!res || !res.body) throw lastErr ?? new Error("OpenRouter stream: no usable response");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let idx: number;
+    while ((idx = buffer.indexOf("\n\n")) >= 0) {
+      const block = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      const dataLines = block
+        .split("\n")
+        .filter((l) => l.startsWith("data: "))
+        .map((l) => l.slice(6));
+      if (dataLines.length === 0) continue;
+      const payload = dataLines.join("");
+      if (payload === "[DONE]") return;
+      try {
+        const obj = JSON.parse(payload) as {
+          choices?: Array<{ delta?: { content?: string } }>;
+        };
+        const content = obj.choices?.[0]?.delta?.content;
+        if (typeof content === "string" && content.length > 0) {
+          yield content;
+        }
+      } catch {
+        // skip malformed
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// OpenAI — /v1/chat/completions with stream:true
+// SSE: each chunk is `data: {...}\n\n`, terminated by `data: [DONE]\n\n`.
+// Yields delta.content as it arrives.
+// ---------------------------------------------------------------------------
+
+async function* streamOpenAI(opts: StreamOptions): AsyncGenerator<string> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY not set");
+  const model = process.env.OPENAI_MODEL ?? OPENAI_DEFAULT_MODEL;
+
+  const res = await fetch(`${OPENAI_HOST}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: opts.system },
+        { role: "user", content: opts.user },
+      ],
+      temperature: opts.temperature ?? 0.5,
+      max_tokens: opts.maxTokens ?? 2048,
+      stream: true,
+    }),
+  });
+
+  if (!res.ok || !res.body) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`OpenAI stream failed: HTTP ${res.status} — ${t.slice(0, 200)}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let idx: number;
+    while ((idx = buffer.indexOf("\n\n")) >= 0) {
+      const block = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      const dataLines = block
+        .split("\n")
+        .filter((l) => l.startsWith("data: "))
+        .map((l) => l.slice(6));
+      if (dataLines.length === 0) continue;
+      const payload = dataLines.join("");
+      if (payload === "[DONE]") return;
+      try {
+        const obj = JSON.parse(payload) as {
+          choices?: Array<{ delta?: { content?: string } }>;
+        };
+        const content = obj.choices?.[0]?.delta?.content;
+        if (typeof content === "string" && content.length > 0) {
+          yield content;
+        }
+      } catch {
+        // skip malformed
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Anthropic — /v1/messages with stream:true
+// SSE events: message_start, content_block_start, content_block_delta (text_delta),
+// content_block_stop, message_delta, message_stop. We only care about
+// content_block_delta with delta.type === "text_delta".
+// ---------------------------------------------------------------------------
+
+async function* streamAnthropic(opts: StreamOptions): AsyncGenerator<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
+  const model = process.env.ANTHROPIC_MODEL ?? ANTHROPIC_DEFAULT_MODEL;
+
+  const { fetchAnthropicWithRetry } = await import("./anthropic-chat");
+  const res = await fetchAnthropicWithRetry(`${ANTHROPIC_HOST}/messages`, {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": ANTHROPIC_VERSION,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: opts.maxTokens ?? 2048,
+      system: opts.system,
+      messages: [{ role: "user", content: opts.user }],
+      temperature: opts.temperature ?? 0.5,
+      stream: true,
+    }),
+  });
+
+  if (!res.ok || !res.body) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`Anthropic stream failed: HTTP ${res.status} — ${t.slice(0, 200)}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let idx: number;
+    while ((idx = buffer.indexOf("\n\n")) >= 0) {
+      const block = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      const dataLines = block
+        .split("\n")
+        .filter((l) => l.startsWith("data: "))
+        .map((l) => l.slice(6));
+      if (dataLines.length === 0) continue;
+      const payload = dataLines.join("");
+      try {
+        const obj = JSON.parse(payload) as {
+          type?: string;
+          delta?: { type?: string; text?: string };
+        };
+        if (obj.type === "content_block_delta" && obj.delta?.type === "text_delta") {
+          const t = obj.delta.text;
+          if (typeof t === "string" && t.length > 0) yield t;
+        }
+        if (obj.type === "message_stop") return;
+      } catch {
+        // skip malformed
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DeepSeek — /v1/chat/completions with stream:true (OpenAI-compatible SSE)
+// ---------------------------------------------------------------------------
+
+async function* streamDeepSeek(opts: StreamOptions): AsyncGenerator<string> {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) throw new Error("DEEPSEEK_API_KEY not set");
+  const model = process.env.DEEPSEEK_MODEL ?? DEEPSEEK_DEFAULT_MODEL;
+
+  const res = await fetch(`${DEEPSEEK_HOST}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: opts.system },
+        { role: "user", content: opts.user },
+      ],
+      temperature: opts.temperature ?? 0.5,
+      max_tokens: opts.maxTokens ?? 2048,
+      stream: true,
+    }),
+  });
+
+  if (!res.ok || !res.body) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`DeepSeek stream failed: HTTP ${res.status} — ${t.slice(0, 200)}`);
+  }
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
