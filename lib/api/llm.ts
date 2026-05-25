@@ -1,7 +1,7 @@
 // lib/api/llm.ts
-// Provider-agnostic LLM wrapper. Pick Ollama (default, local) or Claude
-// (later) via LLM_PROVIDER env var. Validates output against a Zod schema and
-// retries once on parse/schema failure.
+// Provider-agnostic LLM wrapper. Pick Ollama (default, local), Gemini, or
+// Anthropic via LLM_PROVIDER env var. Validates output against a Zod schema
+// and retries once on parse/schema failure.
 //
 // Used everywhere an LLM needs to emit structured JSON:
 //   • /api/generate     — itinerary JSON
@@ -12,16 +12,14 @@
 import { z } from "zod";
 import { ollamaGenerate, type OllamaGenerateInput } from "./llm/ollama";
 import { geminiGenerate } from "./llm/gemini";
-import { openaiGenerate } from "./llm/openai";
 import { anthropicGenerate } from "./llm/anthropic";
-import { deepseekGenerate } from "./llm/deepseek";
 
-export type LLMProvider = "ollama" | "gemini" | "openai" | "anthropic" | "deepseek";
+export type LLMProvider = "ollama" | "gemini" | "anthropic";
 
 function getProvider(): LLMProvider {
   const v = (process.env.LLM_PROVIDER ?? "ollama").toLowerCase();
-  if (v === "ollama" || v === "gemini" || v === "openai" || v === "anthropic" || v === "deepseek") return v;
-  throw new Error(`Unknown LLM_PROVIDER "${v}". Use "ollama", "gemini", "openai", "anthropic", or "deepseek".`);
+  if (v === "ollama" || v === "gemini" || v === "anthropic") return v;
+  throw new Error(`Unknown LLM_PROVIDER "${v}". Use "ollama", "gemini", or "anthropic".`);
 }
 
 export interface GenerateStructuredOptions<T extends z.ZodTypeAny> {
@@ -46,9 +44,7 @@ export async function generateStructured<T extends z.ZodTypeAny>(
   const provider = getProvider();
   const callModel: (input: OllamaGenerateInput) => Promise<string> =
     provider === "gemini" ? geminiGenerate :
-    provider === "openai" ? openaiGenerate :
     provider === "anthropic" ? anthropicGenerate :
-    provider === "deepseek" ? deepseekGenerate :
     ollamaGenerate;
 
   const maxRetries = opts.maxRetries ?? 1;
@@ -101,9 +97,7 @@ export async function generateText(opts: {
   const provider = getProvider();
   const callModel: (input: OllamaGenerateInput) => Promise<string> =
     provider === "gemini" ? geminiGenerate :
-    provider === "openai" ? openaiGenerate :
     provider === "anthropic" ? anthropicGenerate :
-    provider === "deepseek" ? deepseekGenerate :
     ollamaGenerate;
   return callModel({
     system: opts.system,

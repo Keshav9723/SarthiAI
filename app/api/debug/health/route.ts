@@ -29,10 +29,7 @@ export async function GET(_req: NextRequest) {
     checkSupabase(),
     checkOllama(),
     checkGemini(),
-    checkOpenRouter(),
-    checkOpenAI(),
     checkAnthropic(),
-    checkDeepSeek(),
     checkSearchAPI(),
     checkRapidApiIRCTC(),
     checkRapidApiHotels(),
@@ -123,49 +120,6 @@ async function checkGemini(): Promise<HealthResult> {
   }
 }
 
-async function checkOpenRouter(): Promise<HealthResult> {
-  const key = process.env.OPENROUTER_API_KEY;
-  if (!key) return { name: "OpenRouter", status: "skipped", detail: "OPENROUTER_API_KEY not set", used_for: "LLM backup when LLM_PROVIDER=openrouter" };
-  try {
-    // /key endpoint just returns the key's metadata — cheapest verify
-    const { value: res, ms } = await timed(() =>
-      fetch("https://openrouter.ai/api/v1/auth/key", {
-        headers: { Authorization: `Bearer ${key}` },
-      })
-    );
-    return {
-      name: "OpenRouter",
-      status: res.ok ? "ok" : "fail",
-      latency_ms: ms,
-      detail: `HTTP ${res.status}`,
-      used_for: "LLM when LLM_PROVIDER=openrouter",
-    };
-  } catch (err) {
-    return { name: "OpenRouter", status: "fail", detail: (err as Error).message, used_for: "LLM backup" };
-  }
-}
-
-async function checkOpenAI(): Promise<HealthResult> {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) return { name: "OpenAI", status: "skipped", detail: "OPENAI_API_KEY not set", used_for: "LLM when LLM_PROVIDER=openai" };
-  try {
-    const { value: res, ms } = await timed(() =>
-      fetch("https://api.openai.com/v1/models", {
-        headers: { Authorization: `Bearer ${key}` },
-      })
-    );
-    return {
-      name: "OpenAI",
-      status: res.ok ? "ok" : "fail",
-      latency_ms: ms,
-      detail: `HTTP ${res.status}`,
-      used_for: "LLM when LLM_PROVIDER=openai",
-    };
-  } catch (err) {
-    return { name: "OpenAI", status: "fail", detail: (err as Error).message, used_for: "LLM" };
-  }
-}
-
 async function checkAnthropic(): Promise<HealthResult> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return { name: "Anthropic", status: "skipped", detail: "ANTHROPIC_API_KEY not set", used_for: "LLM when LLM_PROVIDER=anthropic" };
@@ -195,27 +149,6 @@ async function checkAnthropic(): Promise<HealthResult> {
     };
   } catch (err) {
     return { name: "Anthropic", status: "fail", detail: (err as Error).message, used_for: "LLM" };
-  }
-}
-
-async function checkDeepSeek(): Promise<HealthResult> {
-  const key = process.env.DEEPSEEK_API_KEY;
-  if (!key) return { name: "DeepSeek", status: "skipped", detail: "DEEPSEEK_API_KEY not set", used_for: "LLM when LLM_PROVIDER=deepseek" };
-  try {
-    const { value: res, ms } = await timed(() =>
-      fetch("https://api.deepseek.com/v1/models", {
-        headers: { Authorization: `Bearer ${key}` },
-      })
-    );
-    return {
-      name: "DeepSeek",
-      status: res.ok ? "ok" : "fail",
-      latency_ms: ms,
-      detail: `HTTP ${res.status}`,
-      used_for: "LLM when LLM_PROVIDER=deepseek",
-    };
-  } catch (err) {
-    return { name: "DeepSeek", status: "fail", detail: (err as Error).message, used_for: "LLM" };
   }
 }
 

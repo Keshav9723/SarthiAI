@@ -76,7 +76,7 @@ const TEAM = [
 const STACK = [
   { label: "Frontend", value: "Next.js 14 · Tailwind CSS · TypeScript" },
   { label: "AI", value: "Claude Sonnet (planning) · Claude Haiku (intent)" },
-  { label: "Search", value: "Supabase pgvector · OpenAI embeddings" },
+  { label: "Search", value: "Supabase pgvector · Ollama embeddings (mxbai-embed-large)" },
   { label: "Travel APIs", value: "Amadeus · OpenWeatherMap · Google Places" },
   { label: "Auth & DB", value: "Supabase Auth · PostgreSQL (RLS)" },
   { label: "Hosting", value: "Vercel · Sentry · GitHub CI/CD" },

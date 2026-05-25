@@ -22,7 +22,7 @@ const STATS: Stat[] = [
   {
     label: "AI-Powered",
     value: "100%",
-    note: "AI-tuned plans",
+    note: "Built around your interests",
     Icon: SparklesIcon,
     accent: "bg-green-50 text-green-700",
   },

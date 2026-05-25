@@ -1,7 +1,7 @@
 // lib/api/llm/stream.ts
 // Provider-agnostic streaming LLM wrapper. Yields tokens as they arrive from
-// the configured provider (Ollama or Gemini). Used by chatbot intent handlers
-// for word-by-word streamed replies.
+// the configured provider (Ollama, Gemini, or Anthropic). Used by chatbot
+// intent handlers for word-by-word streamed replies.
 
 const OLLAMA_BASE_URL =
   process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
@@ -15,18 +15,9 @@ const OLLAMA_NUM_CTX = parseInt(process.env.OLLAMA_NUM_CTX ?? "8192", 10);
 const GEMINI_HOST = "https://generativelanguage.googleapis.com/v1beta";
 const GEMINI_DEFAULT_MODEL = "gemini-2.5-flash";
 
-const OPENROUTER_HOST = "https://openrouter.ai/api/v1";
-const OPENROUTER_DEFAULT_MODEL = "deepseek/deepseek-v4-flash:free";
-
-const OPENAI_HOST = "https://api.openai.com/v1";
-const OPENAI_DEFAULT_MODEL = "gpt-4o-mini";
-
 const ANTHROPIC_HOST = "https://api.anthropic.com/v1";
 const ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-6";
 const ANTHROPIC_VERSION = "2023-06-01";
-
-const DEEPSEEK_HOST = "https://api.deepseek.com/v1";
-const DEEPSEEK_DEFAULT_MODEL = "deepseek-chat";
 
 export interface StreamOptions {
   system: string;
@@ -35,23 +26,17 @@ export interface StreamOptions {
   maxTokens?: number;
 }
 
-function getProvider(): "ollama" | "gemini" | "openrouter" | "openai" | "anthropic" | "deepseek" {
+function getProvider(): "ollama" | "gemini" | "anthropic" {
   const p = (process.env.LLM_PROVIDER ?? "ollama").toLowerCase();
   if (p === "gemini") return "gemini";
-  if (p === "openrouter") return "openrouter";
-  if (p === "openai") return "openai";
   if (p === "anthropic") return "anthropic";
-  if (p === "deepseek") return "deepseek";
   return "ollama";
 }
 
 export async function* streamText(opts: StreamOptions): AsyncGenerator<string> {
   const provider = getProvider();
   if (provider === "gemini") yield* streamGemini(opts);
-  else if (provider === "openrouter") yield* streamOpenRouter(opts);
-  else if (provider === "openai") yield* streamOpenAI(opts);
   else if (provider === "anthropic") yield* streamAnthropic(opts);
-  else if (provider === "deepseek") yield* streamDeepSeek(opts);
   else yield* streamOllama(opts);
 }
 
@@ -125,161 +110,6 @@ async function* streamOllama(opts: StreamOptions): AsyncGenerator<string> {
 }
 
 // ---------------------------------------------------------------------------
-// OpenRouter — /v1/chat/completions with stream:true
-// OpenAI-compatible SSE: each chunk is `data: {...}\n\n`, terminated by
-// `data: [DONE]\n\n`. Yields delta.content as it arrives.
-// ---------------------------------------------------------------------------
-
-async function* streamOpenRouter(opts: StreamOptions): AsyncGenerator<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error("OPENROUTER_API_KEY not set");
-
-  // Try primary, then fallbacks on 429 / 503 / 502. Once a stream connects
-  // successfully we commit to it (can't switch mid-stream).
-  const primary = process.env.OPENROUTER_MODEL ?? OPENROUTER_DEFAULT_MODEL;
-  const fallbacks = (process.env.OPENROUTER_FALLBACK_MODELS ?? "")
-    .split(",").map((s) => s.trim()).filter((s) => s && s !== primary);
-  const chain = [primary, ...fallbacks];
-
-  let lastErr: Error | null = null;
-  let res: Response | null = null;
-
-  for (const model of chain) {
-    const r = await fetch(`${OPENROUTER_HOST}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
-        "X-Title": "Sarthi Travel Planner",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: opts.system },
-          { role: "user", content: opts.user },
-        ],
-        temperature: opts.temperature ?? 0.5,
-        max_tokens: opts.maxTokens ?? 2048,
-        stream: true,
-      }),
-    });
-    if (r.ok && r.body) {
-      res = r;
-      break;
-    }
-    const t = await r.text().catch(() => "");
-    const retryable = r.status === 429 || r.status === 503 || r.status === 502;
-    lastErr = new Error(`OpenRouter stream [${model}] HTTP ${r.status} — ${t.slice(0, 200)}`);
-    if (!retryable) throw lastErr;
-    console.warn(`[stream/openrouter] ${model} → ${r.status}, trying next fallback…`);
-  }
-
-  if (!res || !res.body) throw lastErr ?? new Error("OpenRouter stream: no usable response");
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    let idx: number;
-    while ((idx = buffer.indexOf("\n\n")) >= 0) {
-      const block = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
-      const dataLines = block
-        .split("\n")
-        .filter((l) => l.startsWith("data: "))
-        .map((l) => l.slice(6));
-      if (dataLines.length === 0) continue;
-      const payload = dataLines.join("");
-      if (payload === "[DONE]") return;
-      try {
-        const obj = JSON.parse(payload) as {
-          choices?: Array<{ delta?: { content?: string } }>;
-        };
-        const content = obj.choices?.[0]?.delta?.content;
-        if (typeof content === "string" && content.length > 0) {
-          yield content;
-        }
-      } catch {
-        // skip malformed
-      }
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// OpenAI — /v1/chat/completions with stream:true
-// SSE: each chunk is `data: {...}\n\n`, terminated by `data: [DONE]\n\n`.
-// Yields delta.content as it arrives.
-// ---------------------------------------------------------------------------
-
-async function* streamOpenAI(opts: StreamOptions): AsyncGenerator<string> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY not set");
-  const model = process.env.OPENAI_MODEL ?? OPENAI_DEFAULT_MODEL;
-
-  const res = await fetch(`${OPENAI_HOST}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: opts.system },
-        { role: "user", content: opts.user },
-      ],
-      temperature: opts.temperature ?? 0.5,
-      max_tokens: opts.maxTokens ?? 2048,
-      stream: true,
-    }),
-  });
-
-  if (!res.ok || !res.body) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`OpenAI stream failed: HTTP ${res.status} — ${t.slice(0, 200)}`);
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    let idx: number;
-    while ((idx = buffer.indexOf("\n\n")) >= 0) {
-      const block = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
-      const dataLines = block
-        .split("\n")
-        .filter((l) => l.startsWith("data: "))
-        .map((l) => l.slice(6));
-      if (dataLines.length === 0) continue;
-      const payload = dataLines.join("");
-      if (payload === "[DONE]") return;
-      try {
-        const obj = JSON.parse(payload) as {
-          choices?: Array<{ delta?: { content?: string } }>;
-        };
-        const content = obj.choices?.[0]?.delta?.content;
-        if (typeof content === "string" && content.length > 0) {
-          yield content;
-        }
-      } catch {
-        // skip malformed
-      }
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Anthropic — /v1/messages with stream:true
 // SSE events: message_start, content_block_start, content_block_delta (text_delta),
 // content_block_stop, message_delta, message_stop. We only care about
@@ -342,72 +172,6 @@ async function* streamAnthropic(opts: StreamOptions): AsyncGenerator<string> {
           if (typeof t === "string" && t.length > 0) yield t;
         }
         if (obj.type === "message_stop") return;
-      } catch {
-        // skip malformed
-      }
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// DeepSeek — /v1/chat/completions with stream:true (OpenAI-compatible SSE)
-// ---------------------------------------------------------------------------
-
-async function* streamDeepSeek(opts: StreamOptions): AsyncGenerator<string> {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) throw new Error("DEEPSEEK_API_KEY not set");
-  const model = process.env.DEEPSEEK_MODEL ?? DEEPSEEK_DEFAULT_MODEL;
-
-  const res = await fetch(`${DEEPSEEK_HOST}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: opts.system },
-        { role: "user", content: opts.user },
-      ],
-      temperature: opts.temperature ?? 0.5,
-      max_tokens: opts.maxTokens ?? 2048,
-      stream: true,
-    }),
-  });
-
-  if (!res.ok || !res.body) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`DeepSeek stream failed: HTTP ${res.status} — ${t.slice(0, 200)}`);
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    let idx: number;
-    while ((idx = buffer.indexOf("\n\n")) >= 0) {
-      const block = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
-      const dataLines = block
-        .split("\n")
-        .filter((l) => l.startsWith("data: "))
-        .map((l) => l.slice(6));
-      if (dataLines.length === 0) continue;
-      const payload = dataLines.join("");
-      if (payload === "[DONE]") return;
-      try {
-        const obj = JSON.parse(payload) as {
-          choices?: Array<{ delta?: { content?: string } }>;
-        };
-        const content = obj.choices?.[0]?.delta?.content;
-        if (typeof content === "string" && content.length > 0) {
-          yield content;
-        }
       } catch {
         // skip malformed
       }

@@ -1,6 +1,6 @@
 // lib/api/llm/anthropic-chat.ts
 // Anthropic chat-completion wrapper with tool-use. Drop-in compatible with
-// ollamaChat + geminiChat + openaiChat so the orchestrator can call any of them
+// ollamaChat + geminiChat so the orchestrator can call any of them
 // through the same interface.
 //
 // Anthropic Messages API tool-use shape:
