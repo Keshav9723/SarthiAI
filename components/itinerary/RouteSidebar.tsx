@@ -134,7 +134,11 @@ export default function RouteSidebar({ itinerary, weather, isTemplate = false }:
           Total Budget
         </div>
         <p className="mt-2 text-3xl font-bold tracking-tight">
-          {formatINR(itinerary.totalBudget)}
+          {/* Compute from per-person × group_size at render time. The
+              stored total_budget is occasionally off when the LLM
+              hallucinated an extra zero — this derived total is always
+              consistent with the price-per-person figure shown below. */}
+          {formatINR(itinerary.pricePerPerson * itinerary.groupSize)}
         </p>
         <p className="mt-0.5 text-sm text-white/70">
           {formatINR(itinerary.pricePerPerson)} / person · {itinerary.groupSize}{" "}

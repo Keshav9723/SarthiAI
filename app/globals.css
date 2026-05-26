@@ -165,12 +165,14 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
-   Print stylesheet — used by Share & Export → Download PDF
+   Print stylesheet — used by Share & Export → Download PDF.
    The browser's print dialog can save the resulting page directly as PDF.
    Adding `print:hidden` (Tailwind) on any element hides it during print.
    --------------------------------------------------------------------------- */
 @media print {
-  /* Force background colors to render (Chrome opts in via this property). */
+  /* ---- Color & ink ---- */
+  /* Force background colors + gradients to render. Without this Chrome
+     strips backgrounds to save ink and our cards lose their visual identity. */
   *,
   *::before,
   *::after {
@@ -182,39 +184,128 @@ body {
   body {
     background: #ffffff !important;
     color: #111827 !important;
+    font-size: 11pt;
+    line-height: 1.5;
   }
 
-  /* Strip the gradient hero overlays so text stays crisp on print. */
+  /* Strip gradient hero overlays so text stays crisp on print. */
   .bg-forest-950,
-  [class*="from-forest-950"] {
-    background: #0d2b1d !important;
+  [class*="from-forest-950"],
+  [class*="bg-gradient"] {
+    background-image: none !important;
+    background-color: #0d2b1d !important;
   }
 
+  /* ---- Paper setup ---- */
+  @page {
+    margin: 14mm 16mm 18mm 16mm;
+    size: A4;
+
+    /* Page footer with auto page-numbering. Supported in Chrome's print
+       engine — falls back gracefully on browsers that don't support it. */
+    @bottom-right {
+      content: "Page " counter(page) " of " counter(pages);
+      font-family: var(--font-inter), sans-serif;
+      font-size: 9pt;
+      color: #6b7280;
+    }
+    @bottom-left {
+      content: "Sarthi — AI Travel Itinerary";
+      font-family: var(--font-inter), sans-serif;
+      font-size: 9pt;
+      color: #6b7280;
+    }
+  }
+  /* First page doesn't need the brand footer — gives the cover breathing room. */
+  @page :first {
+    margin-top: 10mm;
+    @bottom-left { content: ""; }
+  }
+
+  /* ---- Layout normalization ---- */
   /* Drop sticky positioning so the sidebar flows with the document. */
   [class*="sticky"] {
     position: static !important;
     top: auto !important;
   }
 
-  /* Tighten margins on the actual paper. */
-  @page {
-    margin: 0.5in;
-    size: A4;
+  /* Collapse the 2-column itinerary grid (day list + right sidebar) to a
+     single column so the sidebar prints AFTER the day list rather than
+     squeezed beside it. */
+  [class*="lg:grid-cols-[1fr_360px]"],
+  [class*="md:grid-cols-12"] {
+    grid-template-columns: 1fr !important;
+    display: block !important;
   }
 
-  /* Prevent a day row from breaking across pages where possible. */
-  article {
-    break-inside: avoid;
-  }
-
-  /* Hide every fixed/floating widget by default — toaster, chat launcher, etc. */
-  .fixed {
+  /* Hide chrome that's noise on paper: nav, footer, chat button, toasts, modal. */
+  nav,
+  footer,
+  .fixed,
+  [role="dialog"],
+  [aria-modal="true"] {
     display: none !important;
   }
 
-  /* Anchor links underlined for readability when printed. */
+  /* ---- Typography hierarchy ---- */
+  h1 { font-size: 22pt; margin-top: 0; }
+  h2 { font-size: 16pt; margin-top: 14pt; }
+  h3 { font-size: 12pt; }
+  p { orphans: 3; widows: 3; }
+
+  /* ---- Page-break behavior ---- */
+  /* Each day card stays on a single page when possible. */
+  article {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  /* Force a fresh page before each major section heading. */
+  section + section h2 {
+    break-before: page;
+    page-break-before: always;
+  }
+  /* Don't break a heading from the content right under it. */
+  h1, h2, h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  /* Images shouldn't span a page break or stretch wider than the print area. */
+  img {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  /* ---- Links ---- */
   a {
     color: #1a3e2c !important;
     text-decoration: underline;
+  }
+  /* Show external link URLs after the link text — except for internal nav
+     links and image-button wrappers which would create noise. */
+  a[href^="http"]:not([href*="localhost"])::after {
+    content: " (" attr(href) ")";
+    font-size: 9pt;
+    color: #6b7280;
+    word-break: break-all;
+  }
+
+  /* ---- Edit/control affordances hidden ---- */
+  /* Edit/Reset buttons under slots and "Add Activity" prompts are interactive
+     noise on paper. Hide them. */
+  [aria-label*="dit"],
+  [class*="hover:bg-cream"]:has(svg) {
+    display: none !important;
+  }
+
+  /* Container resets — kill drop shadows and rounded corners that look weird
+     when printed in black-and-white. */
+  [class*="shadow"] {
+    box-shadow: none !important;
+  }
+  [class*="rounded-3xl"],
+  [class*="rounded-2xl"] {
+    border-radius: 4pt !important;
   }
 }

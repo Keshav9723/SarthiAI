@@ -204,7 +204,7 @@ export default function ItineraryView({
               <p className="mt-2 text-sm text-gray-600">
                 Total planned:{" "}
                 <span className="font-semibold text-gray-900">
-                  {formatINR(itinerary.totalBudget)}
+                  {formatINR(itinerary.pricePerPerson * itinerary.groupSize)}
                 </span>{" "}
                 · {formatINR(itinerary.pricePerPerson)} per person
               </p>
