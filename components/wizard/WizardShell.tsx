@@ -6,6 +6,7 @@
 // as children — parent owns state and validation.
 
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { ChevronLeftIcon, ArrowRightIcon } from "@/components/ui/Icons";
 
 interface Props {
@@ -33,11 +34,29 @@ export default function WizardShell({
   children,
   hideNav = false,
 }: Props) {
+  const router = useRouter();
+
   // Scroll to top whenever the user advances or goes back — without this the
   // viewport stays on the previous question, which is jarring on mobile.
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [step]);
+
+  // Back button behavior: step > 1 → previous step in the wizard. step === 1
+  // → leave the wizard entirely (router.back() falls through to home if
+  // there's no history). Either way the button stays clickable so users
+  // never feel trapped inside the flow.
+  function handleBack() {
+    if (step > 1) {
+      onBack();
+    } else {
+      try {
+        router.back();
+      } catch {
+        router.push("/");
+      }
+    }
+  }
 
   return (
     <div className="min-h-[calc(100dvh-4rem)] flex flex-col bg-cream">
@@ -46,10 +65,9 @@ export default function WizardShell({
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={onBack}
-            disabled={step === 1}
-            className="grid place-items-center w-10 h-10 rounded-full border border-gray-200 text-gray-700 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            aria-label="Previous step"
+            onClick={handleBack}
+            className="grid place-items-center w-10 h-10 rounded-full border border-gray-200 text-gray-700 hover:bg-white transition-colors"
+            aria-label={step === 1 ? "Leave wizard" : "Previous step"}
           >
             <ChevronLeftIcon size={20} />
           </button>
@@ -88,11 +106,10 @@ export default function WizardShell({
           <div className="max-w-3xl mx-auto w-full px-4 md:px-8 py-3 flex items-center justify-between gap-3">
             <button
               type="button"
-              onClick={onBack}
-              disabled={step === 1}
-              className="px-5 py-2.5 text-sm font-semibold text-gray-700 hover:text-gray-900 disabled:opacity-30 disabled:cursor-not-allowed"
+              onClick={handleBack}
+              className="px-5 py-2.5 text-sm font-semibold text-gray-700 hover:text-gray-900"
             >
-              Back
+              {step === 1 ? "Exit" : "Back"}
             </button>
             <button
               type="button"
