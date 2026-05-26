@@ -126,28 +126,73 @@ function collectCities(opts: {
   days?: Array<{ location: string }>;
   fromCity?: string;
 }): string[] {
-  const ordered: string[] = [];
-
   // Anything matching the origin should be stripped — the map is about the
   // destination region, not the long-haul leg.
   const originLc = opts.fromCity?.trim().toLowerCase();
-  const isOrigin = (c: string) => originLc && c.toLowerCase() === originLc;
+  const isOrigin = (c: string) => !!originLc && c.toLowerCase() === originLc;
+
+  // The LLM sometimes fills location fields with garbage like "Delhi to
+  // Bengaluru", "Travel from X", "via Train", or comma-separated landmarks.
+  // Anything that looks like a sentence / phrase / direction is rejected.
+  function isValidCityName(c: string): boolean {
+    if (!c || c.length < 2 || c.length > 60) return false;
+
+    const lower = c.toLowerCase();
+
+    // Reject any phrase indicating travel rather than a place
+    const travelPatterns = [
+      /\b(to|via|from|towards?|through|en[\s-]?route)\b/i,
+      /[→←⇒]/,
+      /^\s*(travel|transfer|fly|drive|board|head|leave|arrive|depart|return)/i,
+      /\b(road trip|day trip|day \d+|night \d+)\b/i,
+    ];
+    if (travelPatterns.some((rx) => rx.test(c))) return false;
+
+    // Reject queries / sentences (multiple commas, all-caps blocks, URL-ish)
+    if ((c.match(/,/g) ?? []).length >= 2) return false;
+    if (/[A-Z]{4,}/.test(c) && !/[a-z]/.test(c)) return false; // ALL CAPS
+    if (/^https?:/.test(lower)) return false;
+    if (/\d{3,}/.test(c)) return false; // pin codes, room numbers
+
+    // Reject filler words on their own
+    const filler = new Set(["arrival", "departure", "transit", "hotel", "city", "town", "village", "the destination"]);
+    if (filler.has(lower.trim())) return false;
+
+    // Must contain at least one alphabetic character
+    if (!/[a-zA-Z]/.test(c)) return false;
+
+    return true;
+  }
+
+  const sanitize = (raw: string): string | null => {
+    const trimmed = raw.trim().replace(/\s+/g, " ");
+    if (!isValidCityName(trimmed)) return null;
+    if (isOrigin(trimmed)) return null;
+    return trimmed;
+  };
+
+  const ordered: string[] = [];
 
   // Prefer day-by-day locations when they exist (most granular).
   const fromDays = (opts.days ?? [])
-    .map((d) => d.location?.trim())
-    .filter((c): c is string => !!c && c.length > 1 && !isOrigin(c));
+    .map((d) => sanitize(d.location ?? ""))
+    .filter((c): c is string => !!c);
   if (fromDays.length > 0) {
-    for (const c of fromDays) ordered.push(c);
+    ordered.push(...fromDays);
   } else {
-    // Otherwise use route stops.
     const fromStops = (opts.stops ?? [])
-      .map((s) => s.city?.trim())
-      .filter((c): c is string => !!c && c.length > 1 && !isOrigin(c));
-    for (const c of fromStops) ordered.push(c);
+      .map((s) => sanitize(s.city ?? ""))
+      .filter((c): c is string => !!c);
+    ordered.push(...fromStops);
   }
 
-  if (ordered.length === 0) ordered.push(opts.destination);
+  // Always fall through to the headline destination if everything else got
+  // filtered out — better to show a single accurate pin than nothing.
+  if (ordered.length === 0) {
+    const fallback = sanitize(opts.destination);
+    if (fallback) ordered.push(fallback);
+    else ordered.push(opts.destination); // last-resort, even if it looks junky
+  }
 
   // Deduplicate consecutive matches (case-insensitive).
   const dedup: string[] = [];

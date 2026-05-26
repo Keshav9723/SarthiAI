@@ -273,19 +273,32 @@ export async function getSeasonalScore(opts: {
     }
   }
 
-  // Fallback: the destination might be a STATE name ("Himachal Pradesh",
+  // Fallback A: the destination might be a STATE name ("Himachal Pradesh",
   // "Kerala") that doesn't have its own destinations row. Find any city in
-  // that state with seasonal data and use its score as a state-level proxy.
+  // that state with seasonal data and use it as a state-level proxy.
+  let destinationType: string | null = null;
+  let destinationState: string | null = null;
   if (!destinationId) {
     const { data: stateMatch } = await sb
       .from("destinations")
-      .select("id")
+      .select("id, destination_type, state")
       .ilike("state", raw)
       .limit(1)
       .maybeSingle();
     if (stateMatch?.id) {
       destinationId = (stateMatch as { id: string }).id;
+      destinationType = (stateMatch as { destination_type: string | null }).destination_type;
+      destinationState = (stateMatch as { state: string }).state;
     }
+  } else {
+    // Cache type/state for fallback C below
+    const { data: meta } = await sb
+      .from("destinations")
+      .select("destination_type, state")
+      .eq("id", destinationId)
+      .maybeSingle();
+    destinationType = (meta as { destination_type: string | null } | null)?.destination_type ?? null;
+    destinationState = (meta as { state: string } | null)?.state ?? null;
   }
 
   if (!destinationId) {
@@ -293,17 +306,65 @@ export async function getSeasonalScore(opts: {
     return null;
   }
 
+  // Try the direct lookup first.
   const { data, error } = await sb
     .from("seasonal_scores")
     .select("score, avg_temp_c, rain_mm")
     .eq("destination_id", destinationId)
     .eq("month", opts.month)
     .maybeSingle();
-  if (error || !data) {
-    console.warn(`[seasonal-score] no row for destination_id=${destinationId} month=${opts.month}`);
-    return null;
+  if (!error && data) {
+    return data as { score: number; avg_temp_c: number | null; rain_mm: number | null };
   }
-  return data as { score: number; avg_temp_c: number | null; rain_mm: number | null };
+
+  console.warn(
+    `[seasonal-score] no row for destination_id=${destinationId} month=${opts.month} — trying fallbacks`
+  );
+
+  // Fallback B: average across other destinations in the SAME STATE for this month.
+  if (destinationState) {
+    const { data: stateAvg } = await sb
+      .from("seasonal_scores")
+      .select("score, avg_temp_c, rain_mm, destinations!inner(state)")
+      .eq("destinations.state", destinationState)
+      .eq("month", opts.month);
+    if (Array.isArray(stateAvg) && stateAvg.length > 0) {
+      return averageRows(stateAvg as ScoreRow[]);
+    }
+  }
+
+  // Fallback C: average across other destinations of the SAME TYPE
+  // (hill_station, beach, etc.) for this month.
+  if (destinationType) {
+    const { data: typeAvg } = await sb
+      .from("seasonal_scores")
+      .select("score, avg_temp_c, rain_mm, destinations!inner(destination_type)")
+      .eq("destinations.destination_type", destinationType)
+      .eq("month", opts.month);
+    if (Array.isArray(typeAvg) && typeAvg.length > 0) {
+      return averageRows(typeAvg as ScoreRow[]);
+    }
+  }
+
+  console.warn(`[seasonal-score] all fallbacks exhausted for "${raw}"`);
+  return null;
+}
+
+interface ScoreRow {
+  score: number;
+  avg_temp_c: number | null;
+  rain_mm: number | null;
+}
+
+function averageRows(rows: ScoreRow[]): ScoreRow {
+  const temps = rows.map((r) => r.avg_temp_c).filter((t): t is number => t != null);
+  const rains = rows.map((r) => r.rain_mm).filter((r): r is number => r != null);
+  const scores = rows.map((r) => r.score);
+  return {
+    score: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
+    avg_temp_c: temps.length > 0 ? temps.reduce((a, b) => a + b, 0) / temps.length : null,
+    rain_mm: rains.length > 0 ? rains.reduce((a, b) => a + b, 0) / rains.length : null,
+  };
 }
 
 export async function getDestinationBySlug(slug: string): Promise<Destination | null> {

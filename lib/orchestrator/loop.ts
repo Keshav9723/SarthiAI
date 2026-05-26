@@ -1,9 +1,3 @@
-// lib/orchestrator/loop.ts
-// The main tool-use loop. Drives a conversation with qwen3.5:9b via Ollama's
-// /api/chat endpoint, executes whichever tools the model requests, and feeds
-// the results back until the model produces a final assistant message that
-// validates against the caller's expected schema.
-
 import { ollamaChat, type ChatMessage } from "@/lib/api/llm/ollama-chat";
 import { geminiChat } from "@/lib/api/llm/gemini-chat";
 import { anthropicChat } from "@/lib/api/llm/anthropic-chat";
