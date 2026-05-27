@@ -60,6 +60,7 @@ export async function ollamaChat(opts: {
   tools?: ToolDefinitionForLLM[];
   temperature?: number;
   maxTokens?: number;
+  signal?: AbortSignal;
 }): Promise<OllamaChatResponse> {
   const body: OllamaChatRequest = {
     model: LLM_MODEL,
@@ -78,6 +79,7 @@ export async function ollamaChat(opts: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
     cache: "no-store",
+    signal: opts.signal,
   });
   if (!res.ok) {
     const t = await res.text().catch(() => "");

@@ -1,12 +1,14 @@
 import { ollamaChat, type ChatMessage } from "@/lib/api/llm/ollama-chat";
 import { geminiChat } from "@/lib/api/llm/gemini-chat";
 import { anthropicChat } from "@/lib/api/llm/anthropic-chat";
+import { groqChat } from "@/lib/api/llm/groq-chat";
 import { toolsForLLM } from "./tools";
 
 function getChatCaller() {
   const p = (process.env.LLM_PROVIDER ?? "ollama").toLowerCase();
   if (p === "gemini") return geminiChat;
   if (p === "anthropic") return anthropicChat;
+  if (p === "groq") return groqChat;
   return ollamaChat;
 }
 import type {
@@ -45,6 +47,17 @@ export async function runOrchestrator<TFinal>(
   const finalizeAfter = Math.max(4, Math.ceil(maxIterations * 0.7));
 
   for (let i = 1; i <= maxIterations; i++) {
+    // Bail out if the client has disconnected (navigated away, closed tab).
+    if (opts.signal?.aborted) {
+      return {
+        iterations: i,
+        toolCalls,
+        final: null,
+        conversation,
+        error: "Aborted by client before iteration " + i,
+      };
+    }
+
     // ----- 1. Call the model -----
     let response;
     try {
@@ -52,8 +65,20 @@ export async function runOrchestrator<TFinal>(
         messages: conversation,
         tools: llmTools,
         temperature: opts.temperature ?? 0.3,
+        signal: opts.signal,
       });
     } catch (err) {
+      // If the abort came in during the fetch, surface it as a clean abort
+      // rather than a generic "LLM call failed".
+      if (opts.signal?.aborted || (err as Error).name === "AbortError") {
+        return {
+          iterations: i,
+          toolCalls,
+          final: null,
+          conversation,
+          error: `Aborted by client during iteration ${i}`,
+        };
+      }
       return {
         iterations: i,
         toolCalls,

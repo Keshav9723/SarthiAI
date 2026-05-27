@@ -72,8 +72,11 @@ export async function* handleLocationInfo(
   }
 
   // Retrieve top chunks. We pull more for "general info" queries since the
-  // user might want a broad overview.
-  let chunks;
+  // user might want a broad overview. If the embedding service is down
+  // (e.g. Ollama not running locally), fall back to answering from the
+  // LLM's general knowledge — better than a hard error to the user.
+  let chunks: Awaited<ReturnType<typeof retrieveContext>> = [];
+  let ragUnavailable = false;
   try {
     chunks = await retrieveContext({
       query: ctx.message,
@@ -81,14 +84,13 @@ export async function* handleLocationInfo(
       k: 8,
     });
   } catch (err) {
-    yield {
-      type: "error",
-      message: `Couldn't fetch destination facts: ${(err as Error).message}`,
-    };
-    return;
+    console.warn(
+      `[locationInfo] RAG retrieval failed, falling back to general knowledge: ${(err as Error).message}`
+    );
+    ragUnavailable = true;
   }
 
-  if (chunks.length === 0) {
+  if (!ragUnavailable && chunks.length === 0) {
     yield {
       type: "token",
       content: `I don't have detailed scraped info on ${dest.name} yet — try Goa, Manali, Jaipur, or another major destination.`,
@@ -96,12 +98,14 @@ export async function* handleLocationInfo(
     return;
   }
 
-  const context = formatChunksForPrompt(chunks);
-  const user =
-    `Destination: ${dest.name}, ${dest.state}\n\n` +
-    `User's question: ${ctx.message}\n\n` +
-    `Verified facts from our travel database:\n\n${context}\n\n` +
-    `Answer the user's question using only the facts above. Be conversational and concise.`;
+  const user = ragUnavailable
+    ? `Destination: ${dest.name}, ${dest.state}\n\n` +
+      `User's question: ${ctx.message}\n\n` +
+      `(Our scraped-facts database is temporarily unavailable. Answer from your general knowledge of India travel, but keep it accurate and clearly grounded in well-known facts about ${dest.name}. If you're unsure of a specific detail, say so rather than inventing it.)`
+    : `Destination: ${dest.name}, ${dest.state}\n\n` +
+      `User's question: ${ctx.message}\n\n` +
+      `Verified facts from our travel database:\n\n${formatChunksForPrompt(chunks)}\n\n` +
+      `Answer the user's question using only the facts above. Be conversational and concise.`;
 
   try {
     for await (const token of streamText({
@@ -123,7 +127,9 @@ export async function* handleLocationInfo(
     data: {
       destination: dest.name,
       destination_id: dest.id,
-      sources: Array.from(new Set(chunks.map((c) => c.sourceUrl))).slice(0, 4),
+      sources: ragUnavailable
+        ? []
+        : Array.from(new Set(chunks.map((c) => c.sourceUrl))).slice(0, 4),
     },
   };
 }

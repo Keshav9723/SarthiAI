@@ -13,13 +13,14 @@ import { z } from "zod";
 import { ollamaGenerate, type OllamaGenerateInput } from "./llm/ollama";
 import { geminiGenerate } from "./llm/gemini";
 import { anthropicGenerate } from "./llm/anthropic";
+import { groqGenerate } from "./llm/groq";
 
-export type LLMProvider = "ollama" | "gemini" | "anthropic";
+export type LLMProvider = "ollama" | "gemini" | "anthropic" | "groq";
 
 function getProvider(): LLMProvider {
   const v = (process.env.LLM_PROVIDER ?? "ollama").toLowerCase();
-  if (v === "ollama" || v === "gemini" || v === "anthropic") return v;
-  throw new Error(`Unknown LLM_PROVIDER "${v}". Use "ollama", "gemini", or "anthropic".`);
+  if (v === "ollama" || v === "gemini" || v === "anthropic" || v === "groq") return v;
+  throw new Error(`Unknown LLM_PROVIDER "${v}". Use "ollama", "gemini", "anthropic", or "groq".`);
 }
 
 export interface GenerateStructuredOptions<T extends z.ZodTypeAny> {
@@ -45,6 +46,7 @@ export async function generateStructured<T extends z.ZodTypeAny>(
   const callModel: (input: OllamaGenerateInput) => Promise<string> =
     provider === "gemini" ? geminiGenerate :
     provider === "anthropic" ? anthropicGenerate :
+    provider === "groq" ? groqGenerate :
     ollamaGenerate;
 
   const maxRetries = opts.maxRetries ?? 1;
@@ -98,6 +100,7 @@ export async function generateText(opts: {
   const callModel: (input: OllamaGenerateInput) => Promise<string> =
     provider === "gemini" ? geminiGenerate :
     provider === "anthropic" ? anthropicGenerate :
+    provider === "groq" ? groqGenerate :
     ollamaGenerate;
   return callModel({
     system: opts.system,

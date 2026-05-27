@@ -19,6 +19,9 @@ const ANTHROPIC_HOST = "https://api.anthropic.com/v1";
 const ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-6";
 const ANTHROPIC_VERSION = "2023-06-01";
 
+const GROQ_HOST = "https://api.groq.com/openai/v1";
+const GROQ_DEFAULT_MODEL = "openai/gpt-oss-120b";
+
 export interface StreamOptions {
   system: string;
   user: string;
@@ -26,10 +29,11 @@ export interface StreamOptions {
   maxTokens?: number;
 }
 
-function getProvider(): "ollama" | "gemini" | "anthropic" {
+function getProvider(): "ollama" | "gemini" | "anthropic" | "groq" {
   const p = (process.env.LLM_PROVIDER ?? "ollama").toLowerCase();
   if (p === "gemini") return "gemini";
   if (p === "anthropic") return "anthropic";
+  if (p === "groq") return "groq";
   return "ollama";
 }
 
@@ -37,6 +41,7 @@ export async function* streamText(opts: StreamOptions): AsyncGenerator<string> {
   const provider = getProvider();
   if (provider === "gemini") yield* streamGemini(opts);
   else if (provider === "anthropic") yield* streamAnthropic(opts);
+  else if (provider === "groq") yield* streamGroq(opts);
   else yield* streamOllama(opts);
 }
 
@@ -242,6 +247,72 @@ async function* streamGemini(opts: StreamOptions): AsyncGenerator<string> {
             yield p.text;
           }
         }
+      } catch {
+        // skip malformed event
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Groq — /openai/v1/chat/completions with stream:true (OpenAI-compatible SSE)
+// Events are `data: {…}\n\n`, terminating with `data: [DONE]`. We yield
+// delta.content from each choices[0].delta.
+// ---------------------------------------------------------------------------
+
+async function* streamGroq(opts: StreamOptions): AsyncGenerator<string> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error("GROQ_API_KEY not set");
+  const model = process.env.GROQ_MODEL ?? GROQ_DEFAULT_MODEL;
+
+  const res = await fetch(`${GROQ_HOST}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: opts.maxTokens ?? 2048,
+      temperature: opts.temperature ?? 0.5,
+      stream: true,
+      messages: [
+        { role: "system", content: opts.system },
+        { role: "user", content: opts.user },
+      ],
+    }),
+  });
+
+  if (!res.ok || !res.body) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`Groq stream failed: HTTP ${res.status} — ${t.slice(0, 200)}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let idx: number;
+    while ((idx = buffer.indexOf("\n\n")) >= 0) {
+      const block = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      const dataLines = block
+        .split("\n")
+        .filter((l) => l.startsWith("data: "))
+        .map((l) => l.slice(6));
+      if (dataLines.length === 0) continue;
+      const payload = dataLines.join("");
+      if (payload === "[DONE]") return;
+      try {
+        const obj = JSON.parse(payload) as {
+          choices?: Array<{ delta?: { content?: string } }>;
+        };
+        const t = obj.choices?.[0]?.delta?.content;
+        if (typeof t === "string" && t.length > 0) yield t;
       } catch {
         // skip malformed event
       }

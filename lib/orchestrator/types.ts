@@ -53,6 +53,10 @@ export interface RunOptions<TFinal> {
   finalSchema: z.ZodType<TFinal>;
   maxIterations?: number;    // default 8 — safety against tool-call loops
   temperature?: number;
+  /** Abort signal — typically `req.signal` from the route handler. When the
+   *  client disconnects, the orchestrator and underlying LLM fetches bail
+   *  out instead of grinding through retries against rate-limited providers. */
+  signal?: AbortSignal;
 }
 
 /**

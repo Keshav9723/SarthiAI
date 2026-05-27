@@ -134,6 +134,7 @@ export async function geminiChat(opts: {
   tools?: ToolDefinitionForLLM[];
   temperature?: number;
   maxTokens?: number;
+  signal?: AbortSignal;
 }): Promise<OllamaChatResponse> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -167,6 +168,7 @@ export async function geminiChat(opts: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
     cache: "no-store",
+    signal: opts.signal,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");

@@ -86,21 +86,35 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  // ---- 3. Resolve destination row (uuid + state + lat/lng) ----
-  const destinationName = parsed.destinations[0];
-  const { data: dest, error: destErr } = await sb
-    .from("destinations")
-    .select("id, name, slug, state, destination_type, region, latitude, longitude")
-    .ilike("name", destinationName)
-    .limit(1)
-    .maybeSingle();
-
-  if (destErr || !dest) {
+  // ---- 3. Resolve every destination row the user picked ----
+  // Multi-city: the wizard sends an array of names; resolve each via ilike so
+  // capitalization variations and "Goa" / "goa" both work. Skip any names that
+  // don't exist in our DB; only error out if NONE of them do.
+  type ResolvedDest = {
+    id: string; name: string; slug: string; state: string;
+    destination_type: string | null;
+  };
+  const resolved: ResolvedDest[] = [];
+  const missing: string[] = [];
+  for (const name of parsed.destinations) {
+    const { data: row } = await sb
+      .from("destinations")
+      .select("id, name, slug, state, destination_type")
+      .ilike("name", name)
+      .limit(1)
+      .maybeSingle();
+    if (row) resolved.push(row as ResolvedDest);
+    else missing.push(name);
+  }
+  if (resolved.length === 0) {
     return NextResponse.json(
-      { error: `We don't have data for "${destinationName}" yet.` },
+      { error: `We don't have data for ${missing.map((m) => `"${m}"`).join(", ")} yet.` },
       { status: 404 }
     );
   }
+  // Primary destination — used for the itinerary row's destination/state cols
+  // and for legacy single-destination prompt fields.
+  const dest = resolved[0];
 
   // ---- 4. Compute trip params from wizard input ----
   const { days, startDate, monthNumber } = deriveTripDates(parsed);
@@ -110,7 +124,7 @@ export async function POST(req: NextRequest) {
   // ---- 5. Build prompts + run orchestrator ----
   const system = buildSystemPrompt();
   const user_prompt = buildUserPrompt({
-    dest, parsed, days, startDate, monthName, totalBudget,
+    dest, allDests: resolved, parsed, days, startDate, monthName, totalBudget,
   });
 
   const startedAt = Date.now();
@@ -121,7 +135,18 @@ export async function POST(req: NextRequest) {
     finalSchema: ItinerarySchema,
     maxIterations: 15,    // 70% threshold ≈ 11 → finalize nudge fires at iter 11
     temperature: 0.3,
+    signal: req.signal,   // bail out if the client navigates away
   });
+
+  // If the client disconnected mid-generation, return 499 (nginx convention)
+  // so callers can distinguish it from a real failure. The persisted insert
+  // below is skipped — no point writing a half-finished trip the user abandoned.
+  if (req.signal.aborted) {
+    return NextResponse.json(
+      { error: "Generation cancelled by client" },
+      { status: 499 }
+    );
+  }
 
   if (!orchestratorResult.final) {
     return NextResponse.json(
@@ -265,20 +290,24 @@ CRITICAL — Final output rules:
 
 function buildUserPrompt(opts: {
   dest: { id: string; name: string; state: string; destination_type: string | null };
+  allDests: Array<{ id: string; name: string; state: string; destination_type: string | null }>;
   parsed: GenerateRequest;
   days: number;
   startDate: string;
   monthName: string;
   totalBudget: number;
 }): string {
-  const { dest, parsed, days, startDate, monthName, totalBudget } = opts;
+  const { dest, allDests, parsed, days, startDate, monthName, totalBudget } = opts;
   const prefs: string[] = [];
   if (parsed.interests?.length) prefs.push(`Interests: ${parsed.interests.join(", ")}`);
   if (parsed.pace) prefs.push(`Pace: ${parsed.pace}`);
   if (parsed.hotelType) prefs.push(`Hotel style: ${parsed.hotelType}`);
   if (parsed.notes?.trim()) prefs.push(`Notes: ${parsed.notes.trim()}`);
 
-  return `
+  const isMulti = allDests.length > 1;
+
+  if (!isMulti) {
+    return `
 ============================================================
 COUNTRY: INDIA · DESTINATION: ${dest.name.toUpperCase()}, ${dest.state.toUpperCase()}
 ============================================================
@@ -299,6 +328,54 @@ From city: ${parsed.fromCity} (Indian city)
 Group: ${parsed.groupSize} ${parsed.group}
 Daily budget per person: ₹${parsed.budget.toLocaleString("en-IN")}
 Total trip budget: ₹${totalBudget.toLocaleString("en-IN")}
+${prefs.length ? `\nUser preferences:\n${prefs.map((p) => `  • ${p}`).join("\n")}` : ""}
+`.trim();
+  }
+
+  // ---- Multi-city prompt ----
+  const cityList = allDests
+    .map(
+      (d, i) =>
+        `  ${i + 1}. ${d.name}, ${d.state}  ·  UUID ${d.id}  ·  type ${d.destination_type ?? "unknown"}`
+    )
+    .join("\n");
+  const combinedDestination = allDests.map((d) => d.name).join(" & ");
+  const primaryState = dest.state;
+
+  return `
+============================================================
+COUNTRY: INDIA · MULTI-CITY TRIP
+Cities: ${allDests.map((d) => `${d.name} (${d.state})`).join(" → ")}
+============================================================
+This trip MUST be inside India. The user has selected ${allDests.length} cities and wants to visit ALL of them, in roughly the order listed below.
+
+Do NOT invent or substitute foreign cities (Los Angeles, Bali, Bangkok, etc.).
+Do NOT drop any of the cities — every one listed below must appear in the "route" array with nights ≥ 1.
+The final JSON's "destination" field MUST be "${combinedDestination}" (combined string for multi-city) and "state" MUST be exactly "${primaryState}" (the primary/first destination's state).
+============================================================
+
+Plan this trip:
+
+Cities to visit (in this order):
+${cityList}
+
+Days: ${days}
+Nights: ${days - 1}
+Travel month: ${monthName} (use date ${startDate} for transport queries)
+From city: ${parsed.fromCity} (Indian city)
+Group: ${parsed.groupSize} ${parsed.group}
+Daily budget per person: ₹${parsed.budget.toLocaleString("en-IN")}
+Total trip budget: ₹${totalBudget.toLocaleString("en-IN")}
+
+MULTI-CITY PLANNING RULES:
+  • Allocate nights across the cities so the totals add up to ${days - 1} nights (excluding the origin which is nights:0).
+  • Each city should get at least 1 night — drop none.
+  • Call get_transport_quotes for each leg: origin → city 1, city 1 → city 2, ..., city N → origin.
+  • Call get_hotel_prices per city. Sum hotel costs across all cities for total_budget.
+  • Call get_destination_facts (with the matching destination UUID) per city to plan activities.
+  • The "route" array MUST contain: origin (nights:0, transfer to city 1), then each city with its own nights and transfer to the NEXT city (or return-leg transfer on the last city).
+  • The "days" array should reflect the chronological flow across cities, with "transfer" type days when moving between cities.
+
 ${prefs.length ? `\nUser preferences:\n${prefs.map((p) => `  • ${p}`).join("\n")}` : ""}
 `.trim();
 }

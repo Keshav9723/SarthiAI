@@ -402,6 +402,14 @@ export function subtitleForWithContext(step: number, form: FormState): string {
 // when first opened, so the user understands they need to set both.
 // ---------------------------------------------------------------------------
 
+interface DestinationSearchResult {
+  name: string;
+  state: string;
+  tagline: string | null;
+  season: string | null;
+  destination_type: string | null;
+}
+
 function StepFromTo({
   form,
   setForm,
@@ -424,9 +432,69 @@ function StepFromTo({
   const fromCities = MOCK_DEPARTURE_CITIES.filter((c) =>
     c.city.toLowerCase().includes(fromQuery.toLowerCase())
   );
-  const toDestinations = MOCK_DESTINATIONS.filter((d) =>
-    d.name.toLowerCase().includes(toQuery.toLowerCase())
+
+  // Default tab below the search bar shows just the 6 featured destinations
+  // (the curated MOCK_DESTINATIONS set). Once the user types anything, we
+  // switch to live Supabase search so the full catalogue becomes reachable.
+  const featuredDestinations: DestinationSearchResult[] = MOCK_DESTINATIONS.map(
+    (d) => ({
+      name: d.name,
+      state: d.state,
+      tagline: d.tagline,
+      season: d.season,
+      destination_type: null,
+    })
   );
+  const [searchResults, setSearchResults] = useState<DestinationSearchResult[]>([]);
+  const [toLoading, setToLoading] = useState(false);
+
+  const trimmedQuery = toQuery.trim();
+  const isSearching = trimmedQuery.length > 0;
+  const toDestinations = isSearching ? searchResults : featuredDestinations;
+
+  useEffect(() => {
+    if (!toOpen) return;
+    if (!isSearching) {
+      // Empty query — show featured only, no network call.
+      setSearchResults([]);
+      setToLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setToLoading(true);
+      try {
+        const res = await fetch(
+          `/api/destinations/search?q=${encodeURIComponent(trimmedQuery)}&limit=24`,
+          { signal: controller.signal }
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as { results?: DestinationSearchResult[] };
+        setSearchResults(data.results ?? []);
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return;
+        // Fall back to mock filter on network failure so the form is still usable.
+        const q = trimmedQuery.toLowerCase();
+        setSearchResults(
+          MOCK_DESTINATIONS.filter((d) => d.name.toLowerCase().includes(q)).map(
+            (d) => ({
+              name: d.name,
+              state: d.state,
+              tagline: d.tagline,
+              season: d.season,
+              destination_type: null,
+            })
+          )
+        );
+      } finally {
+        setToLoading(false);
+      }
+    }, 200);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [trimmedQuery, isSearching, toOpen]);
 
   function pickFrom(city: string) {
     setForm((f) => ({ ...f, fromCity: city }));
@@ -617,11 +685,11 @@ function StepFromTo({
             </div>
 
             <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-2.5">
-              {toDestinations.slice(0, 9).map((d) => {
+              {toDestinations.slice(0, 12).map((d) => {
                 const selected = form.destinations.includes(d.name);
                 return (
                   <button
-                    key={d.id}
+                    key={`${d.name}-${d.state}`}
                     type="button"
                     onClick={() => toggleTo(d.name)}
                     aria-pressed={selected}
@@ -632,17 +700,34 @@ function StepFromTo({
                     }`}
                   >
                     <p className="text-sm font-semibold text-gray-900">{d.name}</p>
-                    <p className="text-[11px] text-gray-500 line-clamp-1">{d.tagline}</p>
-                    <p className="mt-1 text-[10px] font-semibold tracking-widest text-gray-400 uppercase">
-                      Best · {d.season}
+                    <p className="text-[11px] text-gray-500 line-clamp-1">
+                      {d.tagline ?? d.state}
                     </p>
+                    {d.season && (
+                      <p className="mt-1 text-[10px] font-semibold tracking-widest text-gray-400 uppercase">
+                        Best · {d.season}
+                      </p>
+                    )}
                   </button>
                 );
               })}
             </div>
-            {toDestinations.length > 9 && (
+            {toLoading && (
+              <p className="mt-3 text-xs text-gray-500">Searching…</p>
+            )}
+            {!toLoading && isSearching && toDestinations.length === 0 && (
               <p className="mt-3 text-xs text-gray-500">
-                Type to filter — {toDestinations.length} destinations available.
+                No destinations match &ldquo;{trimmedQuery}&rdquo;. Try a different name.
+              </p>
+            )}
+            {!toLoading && isSearching && toDestinations.length > 12 && (
+              <p className="mt-3 text-xs text-gray-500">
+                Showing top 12 of {toDestinations.length} — keep typing to narrow down.
+              </p>
+            )}
+            {!toLoading && !isSearching && (
+              <p className="mt-3 text-xs text-gray-500">
+                Showing featured destinations. Type to search the full catalogue.
               </p>
             )}
           </div>

@@ -159,6 +159,7 @@ export async function anthropicChat(opts: {
   tools?: ToolDefinitionForLLM[];
   temperature?: number;
   maxTokens?: number;
+  signal?: AbortSignal;
 }): Promise<OllamaChatResponse> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -190,6 +191,7 @@ export async function anthropicChat(opts: {
     },
     body: JSON.stringify(body),
     cache: "no-store",
+    signal: opts.signal,
   });
 
   if (!res.ok) {
