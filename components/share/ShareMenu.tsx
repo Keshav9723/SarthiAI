@@ -252,7 +252,7 @@ function MenuItem({
       type="button"
       onClick={onClick}
       role="menuitem"
-      className="flex items-center gap-3 w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors"
+      className="flex items-center gap-3 w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-forest-800 transition-colors"
     >
       <span className="grid place-items-center w-7 h-7 rounded-full bg-cream text-gray-700 shrink-0">
         {icon}

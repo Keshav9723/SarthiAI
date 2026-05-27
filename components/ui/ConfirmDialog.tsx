@@ -83,7 +83,7 @@ export default function ConfirmDialog() {
           type="button"
           aria-label="Close"
           onClick={() => finish(false)}
-          className="absolute top-3 right-3 grid place-items-center w-9 h-9 rounded-full text-gray-500 hover:bg-gray-100 transition-colors"
+          className="absolute top-3 right-3 grid place-items-center w-9 h-9 rounded-full text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-forest-800 transition-colors"
         >
           <XIcon size={18} />
         </button>

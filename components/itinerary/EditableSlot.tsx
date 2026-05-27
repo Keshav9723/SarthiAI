@@ -256,14 +256,14 @@ export default function EditableSlot({
         <button
           type="button"
           onClick={startEditing}
-          className="mt-1 block text-left w-full hover:bg-cream rounded-lg px-1 -mx-1 transition-colors"
+          className="mt-1 block text-left w-full hover:bg-cream dark:hover:bg-forest-800 rounded-lg px-1 -mx-1 transition-colors"
           title="Click to edit"
         >
-          <p className="text-[15px] md:text-base font-semibold text-gray-900 leading-snug">
+          <p className="text-[15px] md:text-base font-semibold text-gray-900 dark:text-gray-100 leading-snug">
             {title}
           </p>
           {description && (
-            <p className="mt-1 text-sm text-gray-600 leading-relaxed">
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
               {description}
             </p>
           )}

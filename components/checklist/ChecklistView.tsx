@@ -169,7 +169,7 @@ export default function ChecklistView({
                         onClick={() => toggle(item.id)}
                         disabled={!hydrated}
                         aria-pressed={isChecked}
-                        className="w-full text-left px-5 py-3.5 flex items-start gap-3 hover:bg-cream transition-colors disabled:cursor-not-allowed"
+                        className="w-full text-left px-5 py-3.5 flex items-start gap-3 hover:bg-cream dark:hover:bg-forest-800 transition-colors disabled:cursor-not-allowed"
                       >
                         <span
                           className={`mt-0.5 grid place-items-center w-5 h-5 rounded-md border-2 shrink-0 transition-colors ${

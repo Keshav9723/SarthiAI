@@ -158,7 +158,7 @@ export default function NotificationBell() {
                       });
                       setOpen(false);
                     }}
-                    className="flex items-start gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors"
+                    className="flex items-start gap-3 p-3 rounded-xl hover:bg-gray-50 dark:hover:bg-forest-800 transition-colors"
                   >
                     <span
                       className={`grid place-items-center w-9 h-9 rounded-full shrink-0 ${

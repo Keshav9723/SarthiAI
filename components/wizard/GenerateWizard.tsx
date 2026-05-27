@@ -819,7 +819,7 @@ function StepGroup({
                     groupSize: Math.max(2, f.groupSize - 1),
                   }))
                 }
-                className="w-10 h-10 rounded-full border border-gray-200 hover:bg-gray-50 text-gray-700"
+                className="w-10 h-10 rounded-full border border-gray-200 dark:border-forest-700 hover:bg-gray-50 dark:hover:bg-forest-800 text-gray-700 dark:text-gray-200"
                 aria-label="Decrease travellers"
               >
                 –
@@ -832,7 +832,7 @@ function StepGroup({
                     groupSize: Math.min(15, f.groupSize + 1),
                   }))
                 }
-                className="w-10 h-10 rounded-full border border-gray-200 hover:bg-gray-50 text-gray-700"
+                className="w-10 h-10 rounded-full border border-gray-200 dark:border-forest-700 hover:bg-gray-50 dark:hover:bg-forest-800 text-gray-700 dark:text-gray-200"
                 aria-label="Increase travellers"
               >
                 +

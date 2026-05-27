@@ -66,7 +66,7 @@ export default function WizardShell({
           <button
             type="button"
             onClick={handleBack}
-            className="grid place-items-center w-10 h-10 rounded-full border border-gray-200 text-gray-700 hover:bg-white transition-colors"
+            className="grid place-items-center w-10 h-10 rounded-full border border-gray-200 dark:border-forest-700 text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-forest-800 transition-colors"
             aria-label={step === 1 ? "Leave wizard" : "Previous step"}
           >
             <ChevronLeftIcon size={20} />

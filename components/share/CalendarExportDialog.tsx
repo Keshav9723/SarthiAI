@@ -117,7 +117,7 @@ export default function CalendarExportDialog({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="grid place-items-center w-9 h-9 rounded-full hover:bg-gray-100 text-gray-500"
+            className="grid place-items-center w-9 h-9 rounded-full hover:bg-gray-100 dark:hover:bg-forest-800 text-gray-500 dark:text-gray-300"
           >
             <XIcon size={18} />
           </button>

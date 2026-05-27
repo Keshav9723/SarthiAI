@@ -216,7 +216,7 @@ export default function DateRangePicker({
                     ? "text-transparent pointer-events-none"
                     : disabled
                       ? "text-gray-300 cursor-not-allowed"
-                      : "text-gray-800 hover:bg-gray-100"
+                      : "text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-forest-800"
                 } ${
                   isStart || isEnd
                     ? "bg-green-600 text-white hover:bg-green-700 z-10"
@@ -347,7 +347,7 @@ export default function DateRangePicker({
             type="button"
             onClick={() => setViewMonth((m) => addMonths(m, -1))}
             aria-label="Previous month"
-            className="grid place-items-center w-9 h-9 rounded-full border border-gray-200 hover:bg-gray-50 text-gray-700"
+            className="grid place-items-center w-9 h-9 rounded-full border border-gray-200 dark:border-forest-700 hover:bg-gray-50 dark:hover:bg-forest-800 text-gray-700 dark:text-gray-200"
           >
             <ChevronLeftIcon size={18} />
           </button>
@@ -358,7 +358,7 @@ export default function DateRangePicker({
             type="button"
             onClick={() => setViewMonth((m) => addMonths(m, 1))}
             aria-label="Next month"
-            className="grid place-items-center w-9 h-9 rounded-full border border-gray-200 hover:bg-gray-50 text-gray-700"
+            className="grid place-items-center w-9 h-9 rounded-full border border-gray-200 dark:border-forest-700 hover:bg-gray-50 dark:hover:bg-forest-800 text-gray-700 dark:text-gray-200"
           >
             <ChevronRightIcon size={18} />
           </button>
