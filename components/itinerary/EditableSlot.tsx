@@ -33,18 +33,89 @@ interface Props {
   onReset: () => void;
 }
 
-// Splits "Visit Amber Fort and City Palace. Built in 1592, this UNESCO..."
-// into { title: "Visit Amber Fort and City Palace", description: "Built in..." }.
-// If the text has no sentence boundary, the whole string is the title.
+// Splits multi-sentence activity text into a title (the most informative
+// sentence) and a description (everything else, in original order).
+//
+// We can't just take the first sentence: the LLM frequently leads with a
+// generic action like "Lunch at a local café" and then mentions the actual
+// landmark ("Visit Manu Temple") in the second sentence. Picking the first
+// sentence as the heading hides the interesting content. Instead we score
+// every sentence and use the highest-scoring one as the title.
 function splitTitleDescription(text: string): { title: string; description: string } {
   const t = text.trim();
-  // Match first sentence end — period/!/? followed by space + capital letter,
-  // OR period at end of a clause longer than ~10 chars (to avoid abbreviations).
-  const m = t.match(/^(.{8,}?[.!?])\s+(.+)$/s);
-  if (m) {
-    return { title: m[1].replace(/[.!?]+$/, "").trim(), description: m[2].trim() };
+  // Split on sentence boundaries (period/!/?, followed by whitespace + capital).
+  const sentences = splitSentences(t);
+  if (sentences.length <= 1) {
+    return { title: t.replace(/[.!?]+$/, "").trim(), description: "" };
   }
-  return { title: t, description: "" };
+
+  // Score each sentence, then pick the top one as the title. Ties resolve in
+  // favour of the earlier sentence so the original ordering is preserved
+  // when nothing stands out.
+  let bestIdx = 0;
+  let bestScore = -Infinity;
+  for (let i = 0; i < sentences.length; i++) {
+    const score = scoreSentence(sentences[i]);
+    if (score > bestScore) {
+      bestScore = score;
+      bestIdx = i;
+    }
+  }
+
+  const title = sentences[bestIdx].replace(/[.!?]+$/, "").trim();
+  const description = sentences
+    .filter((_, i) => i !== bestIdx)
+    .join(" ")
+    .trim();
+  return { title, description };
+}
+
+/** Split prose on sentence boundaries. Lightweight — not as precise as a
+ *  full NLP segmenter, but enough for itinerary copy. */
+function splitSentences(t: string): string[] {
+  // Capture each "...sentence."-like run. Lookbehind isn't reliable across
+  // older Safari, so we do it with a positive split.
+  const parts = t.match(/[^.!?]+(?:[.!?]+|$)/g) ?? [t];
+  return parts.map((s) => s.trim()).filter((s) => s.length > 0);
+}
+
+/** Score a single sentence on how good a heading it would make. Higher is
+ *  better. The weights are tuned to favour sentences naming a specific
+ *  place over generic action sentences like "Lunch at a local café". */
+function scoreSentence(sentence: string): number {
+  const s = sentence.trim();
+  let score = 0;
+
+  // +3 for an action verb that names a place ("Visit Manu Temple", "Explore Old City").
+  if (/^(Visit|Explore|See|Tour|Hike|Walk|Drive|Trek|Discover|Wander)\s+/i.test(s)) {
+    score += 3;
+  }
+
+  // +3 for a multi-word proper-noun phrase in the middle of the sentence —
+  // strong signal that the sentence references a real landmark.
+  // Skip the first word so the sentence-initial capital doesn't count.
+  const afterFirst = s.replace(/^\S+\s+/, "");
+  const properNounMatches = afterFirst.match(/[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+/g);
+  if (properNounMatches && properNounMatches.length > 0) {
+    score += 3;
+  } else if (afterFirst.match(/[A-Z][a-zA-Z]+/)) {
+    // +1 for at least one capitalised word mid-sentence (single-word place name).
+    score += 1;
+  }
+
+  // -3 for generic food / rest / arrival sentences that don't name anything.
+  if (
+    /^(Have\s+)?(Lunch|Dinner|Breakfast|Brunch|Snacks?|Eat|Dine)\s+at\s+(a|the|some)?\s*(local|nearby|quaint|cozy)?/i.test(s) ||
+    /^(Relax|Rest|Unwind|Chill|Take it easy|Free time)/i.test(s) ||
+    /^(Check[-\s]?in|Check[-\s]?out|Arrive|Depart)\s+(at|to|in)?\s*(your|the|a)?\s*(hotel|stay|accommodation)?$/i.test(s)
+  ) {
+    score -= 3;
+  }
+
+  // Slight tiebreaker by length — longer sentences usually carry more detail.
+  if (s.length > 30) score += 0.5;
+
+  return score;
 }
 
 export default function EditableSlot({

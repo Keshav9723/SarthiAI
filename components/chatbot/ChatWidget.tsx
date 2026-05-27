@@ -9,7 +9,7 @@
 // - Typing dots for ~1s before the bot reply renders
 // - Suggested-reply chips render below the input and refresh after each reply
 
-import { usePathname, useParams } from "next/navigation";
+import { usePathname, useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CompassIcon,
@@ -42,7 +42,20 @@ function pathToContext(path: string | null): PageContext {
 export default function ChatWidget() {
   const pathname = usePathname();
   const params = useParams<{ id?: string }>();
+  const router = useRouter();
   const context = useMemo(() => pathToContext(pathname), [pathname]);
+
+  // Per-page sessionStorage key. We persist the entire conversation under
+  // this key so a hard reload on the same path keeps the message thread
+  // intact. Navigating to a different page starts a fresh thread.
+  const storageKey = useMemo(
+    () => `sarthi:chat:${pathname ?? "/"}`,
+    [pathname]
+  );
+  const metadataStorageKey = useMemo(
+    () => `sarthi:chat:meta:${pathname ?? "/"}`,
+    [pathname]
+  );
 
   // For /itinerary/[id], pass the URL id straight through so the modify-itinerary
   // handler can DB-load it. (Earlier this looked up the destination name in
@@ -93,6 +106,18 @@ export default function ChatWidget() {
       const id = streamingBotIdRef.current;
       if (!id) return;
       setMessageMetadata((prev) => ({ ...prev, [id]: data }));
+      // The modify-itinerary handler emits { itinerary_id, patches } when it
+      // has just written changes back to the DB. Trigger a server re-fetch
+      // so the day-slot grid and budget panel update live — no manual page
+      // reload required.
+      if (
+        data &&
+        typeof data === "object" &&
+        "itinerary_id" in data &&
+        "patches" in data
+      ) {
+        router.refresh();
+      }
     },
     onError: (msg) => {
       const id = streamingBotIdRef.current;
@@ -113,8 +138,34 @@ export default function ChatWidget() {
     },
   });
 
-  // Seed the conversation with the context-tuned opener whenever the page changes.
+  // Hydrate the conversation from sessionStorage on mount / path change.
+  // If there's saved history for this page, restore it; otherwise seed with
+  // the context-tuned opener. Persistence is per-tab and per-path, so a
+  // hard reload on /itinerary/[id] keeps the thread, while navigating to a
+  // different page starts a fresh one.
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const savedMessages = window.sessionStorage.getItem(storageKey);
+      const savedMetadata = window.sessionStorage.getItem(metadataStorageKey);
+      if (savedMessages) {
+        const parsed = JSON.parse(savedMessages) as ChatMessage[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMessages(parsed);
+          if (savedMetadata) {
+            try {
+              setMessageMetadata(JSON.parse(savedMetadata));
+            } catch {
+              setMessageMetadata({});
+            }
+          }
+          setShowChips(false);
+          return;
+        }
+      }
+    } catch {
+      // Corrupt JSON or quota error — fall through to opener seed.
+    }
     setMessages([
       {
         id: `opener-${context}-${destination ?? "x"}`,
@@ -123,8 +174,27 @@ export default function ChatWidget() {
         timestamp: new Date().toISOString(),
       },
     ]);
+    setMessageMetadata({});
     setShowChips(true);
-  }, [context, destination]);
+  }, [context, destination, storageKey, metadataStorageKey]);
+
+  // Persist the conversation back to sessionStorage whenever it changes.
+  // Skip writes while a message is mid-stream so we don't save partial text;
+  // the final write happens when streamingBotId clears on `done`.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (streamingBotId) return;
+    try {
+      window.sessionStorage.setItem(storageKey, JSON.stringify(messages));
+      window.sessionStorage.setItem(
+        metadataStorageKey,
+        JSON.stringify(messageMetadata)
+      );
+    } catch {
+      // Storage quota exceeded — silently ignore; the thread will still
+      // work in-memory for the rest of the session.
+    }
+  }, [messages, messageMetadata, streamingBotId, storageKey, metadataStorageKey]);
 
   // Auto-scroll the messages list when a new message or typing indicator appears.
   useEffect(() => {
