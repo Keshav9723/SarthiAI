@@ -1022,14 +1022,119 @@ function StepDates({
         I&apos;ll skip this for now
       </label>
 
-      {form.startDate && form.endDate && form.destinations[0] && (
-        <p className="text-sm text-green-700">
-          Looks like a great window for {form.destinations[0]} — your dates
-          align with the recommended season.
-        </p>
-      )}
+      {form.startDate && form.endDate && form.destinations[0] && (() => {
+        const month = new Date(form.startDate).getMonth() + 1;
+        const verdict = getSeasonalVerdict(form.destinations[0], month);
+        if (verdict.status === "great") {
+          return (
+            <p className="text-sm text-green-700">
+              Looks like a great window for {form.destinations[0]} — your dates
+              align with the recommended season.
+            </p>
+          );
+        }
+        if (verdict.status === "ok") {
+          return (
+            <p className="text-sm text-saffron-700">
+              {form.destinations[0]} in {monthName(month)} is a shoulder window —
+              {" "}doable but not peak conditions ({verdict.reason}).
+            </p>
+          );
+        }
+        return (
+          <p className="text-sm text-rose-700">
+            Heads up — {form.destinations[0]} in {monthName(month)} is typically{" "}
+            {verdict.reason}. Consider a different month if your dates are
+            flexible.
+          </p>
+        );
+      })()}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Seasonal-comfort heuristic for Indian destinations. Categorises the
+// destination by region (hill / desert / coastal / south / northeast /
+// island), then maps each month to "great" / "ok" / "tough" with a short
+// human-readable reason. Used by the date-picker hint above.
+// ---------------------------------------------------------------------------
+function getSeasonalVerdict(
+  destination: string,
+  month: number
+): { status: "great" | "ok" | "tough"; reason: string } {
+  const d = destination.toLowerCase();
+
+  // Hill stations / Himalayas — cold in winter, monsoon-prone in Jul-Aug.
+  if (
+    /manali|shimla|kasol|leh|ladakh|kashmir|spiti|gulmarg|sikkim|darjeeling|gangtok|mussoorie|dharamshala|mcleodganj|nainital|auli|kufri|tirthan|lansdowne|yercaud/.test(d)
+  ) {
+    if ([5, 6, 9, 10].includes(month)) return { status: "great", reason: "pleasant" };
+    if ([4, 7, 8, 11].includes(month))
+      return { status: "ok", reason: "shoulder season" };
+    return { status: "tough", reason: "extreme cold and limited access" };
+  }
+
+  // Rajasthan / desert / plains — comfortable Oct–Feb; brutal heat Apr–Jun;
+  // monsoon Jul–Sep.
+  if (
+    /rajasthan|jaipur|jodhpur|udaipur|jaisalmer|pushkar|bikaner|delhi|agra|varanasi|amritsar|gujarat|ahmedabad|kutch|bhopal|gwalior|khajuraho|orchha|madhya pradesh/.test(d)
+  ) {
+    if ([11, 12, 1, 2].includes(month)) return { status: "great", reason: "cool and dry" };
+    if ([3, 10].includes(month)) return { status: "ok", reason: "warming up" };
+    if ([4, 5].includes(month))
+      return { status: "tough", reason: "extreme heat (40 °C+)" };
+    return { status: "tough", reason: "monsoon" };
+  }
+
+  // Coastal — Goa, Kerala beaches. Best Nov–Feb; heavy monsoon Jun–Sep.
+  if (
+    /goa|kerala|kochi|alleppey|munnar|wayanad|varkala|kovalam|gokarna|kanyakumari/.test(d)
+  ) {
+    if ([11, 12, 1, 2].includes(month)) return { status: "great", reason: "sunny and dry" };
+    if ([3, 10].includes(month)) return { status: "ok", reason: "warm but viable" };
+    return { status: "tough", reason: "heavy monsoon rain" };
+  }
+
+  // South India interior.
+  if (
+    /bangalore|bengaluru|mysore|coorg|chikmagalur|ooty|chennai|pondicherry|hampi|hyderabad|tamil nadu|karnataka/.test(d)
+  ) {
+    if ([10, 11, 12, 1, 2].includes(month))
+      return { status: "great", reason: "mild and dry" };
+    if ([3, 9].includes(month)) return { status: "ok", reason: "shoulder season" };
+    return { status: "tough", reason: "hot or wet" };
+  }
+
+  // Northeast — Oct-Apr good; monsoon May-Sep is the wettest in the country.
+  if (
+    /assam|meghalaya|shillong|cherrapunji|arunachal|nagaland|manipur|mizoram|tripura/.test(d)
+  ) {
+    if ([10, 11, 12, 1, 2, 3, 4].includes(month))
+      return { status: "great", reason: "dry and clear" };
+    return { status: "tough", reason: "heavy monsoon" };
+  }
+
+  // Andaman / island.
+  if (/andaman|lakshadweep|port blair|havelock|neil island/.test(d)) {
+    if ([11, 12, 1, 2, 3].includes(month))
+      return { status: "great", reason: "calm seas, sunny" };
+    if ([4, 10].includes(month)) return { status: "ok", reason: "warm but viable" };
+    return { status: "tough", reason: "monsoon and cyclone risk" };
+  }
+
+  // Generic India fallback.
+  if ([11, 12, 1, 2].includes(month))
+    return { status: "great", reason: "cool and dry" };
+  if ([3, 10].includes(month)) return { status: "ok", reason: "shoulder season" };
+  return { status: "tough", reason: "hot or monsoon-affected" };
+}
+
+function monthName(m: number): string {
+  return [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+  ][m - 1] ?? "";
 }
 
 // ---------------------------------------------------------------------------
