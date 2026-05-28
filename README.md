@@ -109,12 +109,6 @@ npm install
 
 ### Configure environment
 
-Copy the example file and fill in your keys:
-
-```bash
-cp .env.example .env.local
-```
-
 See the [Environment variables](#environment-variables) section for the complete list.
 
 ### Run the database migrations
