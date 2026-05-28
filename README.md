@@ -259,19 +259,3 @@ Live at **<https://sarthitravel.vercel.app/>**
 
 ---
 
-## Team
-
-| Member | Roll No. | Role |
-|---|---|---|
-| Keshav Tanwar | 22CSU338 | Backend & AI |
-| Yashraj Verma | 22CSU331 | Database, Auth & Diagrams |
-| Parth Raj | 22CSU336 | Frontend & API Sourcing |
-| Gagan Lohchab | 22CSU227 | Research & Docs |
-
-Project submitted as a final-year B.Tech project, 2026.
-
----
-
-## License
-
-This project is published for academic and portfolio purposes. No license is granted for commercial reuse. Feel free to read, learn from, and reference the code; please contact the authors for any other use.
